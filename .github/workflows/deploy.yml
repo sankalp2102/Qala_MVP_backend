@@ -5,12 +5,27 @@ on:
     branches: [ main ]
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ghcr.io/sankalp2102/qala-backend:latest
 
       - name: Setup SSH
         run: |
@@ -19,38 +34,35 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Write .env file
+      - name: Write .env to VM
         run: |
-          printf '%s\n' \
-            "DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}" \
-            "DJANGO_DEBUG=False" \
-            "DJANGO_ALLOWED_HOSTS=34.169.72.66,localhost" \
-            "DB_NAME=qala_db" \
-            "DB_USER=qala_user" \
-            "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" \
-            "DB_HOST=django_db" \
-            "DB_PORT=5432" \
-            "SUPERTOKENS_URL=http://supertokens:3567" \
-            "SUPERTOKENS_API_KEY=${{ secrets.SUPERTOKENS_API_KEY }}" \
-            "SUPERTOKENS_APP_NAME=Qala" \
-            "SUPERTOKENS_API_DOMAIN=http://34.169.72.66" \
-            "SUPERTOKENS_WEBSITE_DOMAIN=http://34.169.72.66" \
-            "SUPERTOKENS_HOOK_SECRET=${{ secrets.SUPERTOKENS_HOOK_SECRET }}" \
-            "CORS_ALLOWED_ORIGINS=http://34.169.72.66" \
+          printf 'DJANGO_SECRET_KEY=%s\nDJANGO_DEBUG=False\nDJANGO_ALLOWED_HOSTS=34.169.72.66,localhost\nDB_NAME=qala_db\nDB_USER=qala_user\nDB_PASSWORD=%s\nDB_HOST=django_db\nDB_PORT=5432\nSUPERTOKENS_URL=http://supertokens:3567\nSUPERTOKENS_API_KEY=%s\nSUPERTOKENS_APP_NAME=Qala\nSUPERTOKENS_API_DOMAIN=http://34.169.72.66\nSUPERTOKENS_WEBSITE_DOMAIN=http://34.169.72.66\nSUPERTOKENS_HOOK_SECRET=%s\nCORS_ALLOWED_ORIGINS=http://34.169.72.66\n' \
+            "${{ secrets.DJANGO_SECRET_KEY }}" \
+            "${{ secrets.DB_PASSWORD }}" \
+            "${{ secrets.SUPERTOKENS_API_KEY }}" \
+            "${{ secrets.SUPERTOKENS_HOOK_SECRET }}" \
             > .env.production
           scp -i ~/.ssh/deploy_key .env.production ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/home/tech/qala-backend/.env
 
-      - name: Pull code and deploy
+      - name: Deploy on VM
         run: |
           ssh -i ~/.ssh/deploy_key ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} '
             set -e
-            cd /home/tech/qala-backend
-            git pull origin main
+
+            # Login to GitHub Container Registry
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Pull the pre-built image
+            docker pull ghcr.io/sankalp2102/qala-backend:latest
+
+            # Update compose to use pre-built image instead of building
             cd /home/tech/supertokens-auth
-            docker compose build django
             docker compose up -d django
             sleep 5
+
+            # Run migrations
             docker compose exec -T django python manage.py migrate --noinput
             docker compose exec -T django python manage.py collectstatic --noinput
+
             echo "Deploy complete"
           '
