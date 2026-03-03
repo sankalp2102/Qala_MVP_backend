@@ -10,7 +10,9 @@ https://docs.djangoproject.com/en/5.1/howto/deployment/wsgi/
 # Qala/wsgi.py
 import os
 from django.core.wsgi import get_wsgi_application
-from supertokens_python.framework.django.django_middleware import middleware
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Qala.settings.production')
-application = middleware(get_wsgi_application())
+
+# SuperTokens routing is handled by core.middleware.SuperTokensSessionMiddleware
+# in MIDDLEWARE list in settings/base.py — no wrapping needed here.
+application = get_wsgi_application()
