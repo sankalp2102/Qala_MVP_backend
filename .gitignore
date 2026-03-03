@@ -1,0 +1,21 @@
+# Secrets - never commit these
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+
+# Django
+staticfiles/
+media/
+db.sqlite3
+*.log
+
+# Mac
+.DS_Store
