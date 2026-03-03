@@ -66,6 +66,22 @@ def mark_section_in_progress(profile: SellerProfile, section: str):
         setattr(onboarding, field, SectionStatus.IN_PROGRESS)
         onboarding.last_saved_at = timezone.now()
         onboarding.save(update_fields=[field, 'last_saved_at'])
+        
+def auto_resolve_flags(instance, field_name: str = None):
+    """
+    Called after seller saves data.
+    Clears per-field flags or row-level flags automatically.
+    """
+    if field_name:
+        flagged_field = f'{field_name}_flagged'
+        reason_field  = f'{field_name}_flag_reason'
+        if hasattr(instance, flagged_field) and getattr(instance, flagged_field):
+            setattr(instance, flagged_field, False)
+            setattr(instance, reason_field, None)
+            instance.save(update_fields=[flagged_field, reason_field])
+    else:
+        if hasattr(instance, 'is_flagged') and instance.is_flagged:
+            instance.resolve_flag()
 
 
 def mark_section_submitted(profile: SellerProfile, section: str):
@@ -114,6 +130,9 @@ class StudioDetailsView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         serializer.save(seller_profile=profile)
+        sd = StudioDetails.objects.get(seller_profile=profile)
+        for field in ['studio_name', 'location', 'years', 'website', 'poc']:
+            auto_resolve_flags(sd, field)
         mark_section_submitted(profile, 'a')
         return Response(serializer.data)
 
@@ -124,6 +143,8 @@ class StudioDetailsView(APIView):
         serializer  = StudioDetailsSerializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        for field in ['studio_name', 'location', 'years', 'website', 'poc']:
+            auto_resolve_flags(instance, field)
         mark_section_in_progress(profile, 'a')
         return Response(serializer.data)
 
@@ -329,6 +350,7 @@ class CraftDetailItemView(APIView):
         serializer = CraftDetailSerializer(craft, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        auto_resolve_flags(craft)
         return Response(serializer.data)
 
     def delete(self, request, craft_id):
@@ -371,6 +393,8 @@ class CollabDesignView(APIView):
         serializer  = CollabDesignSerializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        for field in ['designer', 'references', 'iterations']:
+            auto_resolve_flags(instance, field)
         mark_section_submitted(profile, 'd')
         return Response(serializer.data)
 
@@ -419,6 +443,8 @@ class ProductionScaleView(APIView):
         serializer  = ProductionScaleSerializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        for field in ['capacity', 'minimums']:
+            auto_resolve_flags(instance, field)
         mark_section_submitted(profile, 'e')
         return Response(serializer.data)
 
@@ -461,6 +487,7 @@ class ProcessReadinessView(APIView):
         serializer  = ProcessReadinessSerializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        auto_resolve_flags(instance, 'steps')
         mark_section_submitted(profile, 'f')
         return Response(serializer.data)
 
@@ -705,3 +732,48 @@ class AdminSellerProfileListView(APIView):
             })
 
         return Response(data)
+    
+# ─────────────────────────────────────────────────────────────────────────────
+# ADMIN — Edit seller data directly
+# ─────────────────────────────────────────────────────────────────────────────
+class AdminEditSellerSectionView(APIView):
+    """
+    PATCH /api/admin/seller-profiles/<profile_id>/edit/<section>/
+    Admin can directly edit any section of a seller's onboarding data.
+    sections: studio, products, collab, production, process, crafts/<craft_id>
+    """
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, profile_id, section, object_id=None):
+        profile = get_object_or_404(SellerProfile, id=profile_id)
+
+        if section == 'studio':
+            instance = get_object_or_404(StudioDetails, seller_profile=profile)
+            serializer = StudioDetailsSerializer(instance, data=request.data, partial=True)
+
+        elif section == 'products':
+            instance = get_object_or_404(ProductTypes, seller_profile=profile)
+            serializer = ProductTypesSerializer(instance, data=request.data, partial=True)
+
+        elif section == 'collab':
+            instance = get_object_or_404(CollabDesign, seller_profile=profile)
+            serializer = CollabDesignSerializer(instance, data=request.data, partial=True)
+
+        elif section == 'production':
+            instance = get_object_or_404(ProductionScale, seller_profile=profile)
+            serializer = ProductionScaleSerializer(instance, data=request.data, partial=True)
+
+        elif section == 'process':
+            instance = get_object_or_404(ProcessReadiness, seller_profile=profile)
+            serializer = ProcessReadinessSerializer(instance, data=request.data, partial=True)
+
+        elif section == 'craft' and object_id:
+            instance = get_object_or_404(CraftDetail, id=object_id, seller_profile=profile)
+            serializer = CraftDetailSerializer(instance, data=request.data, partial=True)
+
+        else:
+            return Response({'error': 'Invalid section.'}, status=400)
+
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)

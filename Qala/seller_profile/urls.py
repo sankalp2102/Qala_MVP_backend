@@ -11,7 +11,7 @@ from .views import (
     ProcessReadinessView, BTSMediaView,
     SellerFlagSummaryView,
     AdminFlagView, AdminResolveFlagView,
-    AdminSellerOnboardingView, AdminSellerProfileListView,
+    AdminSellerOnboardingView, AdminSellerProfileListView, AdminEditSellerSectionView,
 )
 
 urlpatterns = [
@@ -57,4 +57,8 @@ urlpatterns = [
     path('admin/seller-profiles/<int:profile_id>/onboarding/', AdminSellerOnboardingView.as_view(), name='admin-onboarding'),
     path('admin/seller-profiles/<int:profile_id>/flag/',    AdminFlagView.as_view(),             name='admin-flag'),
     path('admin/seller-profiles/<int:profile_id>/resolve-flag/', AdminResolveFlagView.as_view(), name='admin-resolve'),
+    path('admin/seller-profiles/<int:profile_id>/edit/<str:section>/',
+         AdminEditSellerSectionView.as_view(), name='admin-edit-section'),
+    path('admin/seller-profiles/<int:profile_id>/edit/craft/<int:object_id>/',
+         AdminEditSellerSectionView.as_view(), {'section': 'craft'}, name='admin-edit-craft'),
 ]
