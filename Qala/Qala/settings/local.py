@@ -13,7 +13,7 @@ DATABASES = {
 CORS_ALLOW_ALL_ORIGINS = True
 
 SUPERTOKENS = {
-    'SUPERTOKENS_URL':     'http://YOUR_GCP_VM_EXTERNAL_IP:3567',
+    'SUPERTOKENS_URL':     'http://34.169.72.66:3567',
     'API_KEY':             '70031101955ba2c956c9f6dd5469fa65a85bc91d',
     'APP_NAME':            'Qala',
     'API_DOMAIN':          'http://localhost:8000',

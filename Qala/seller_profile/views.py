@@ -1,13 +1,9 @@
-from django.shortcuts import render
-
-# Create your views here.
 # seller_profile/views.py
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import NotFound
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from core.models import SellerProfile
@@ -39,7 +35,7 @@ from .serializers import (
 def get_active_profile(request) -> SellerProfile:
     """
     Resolves the active SellerProfile from the session.
-    The frontend sends X-Profile-Id header after the seller picks a profile.
+    Frontend sends X-Profile-Id header after seller picks a profile.
     Falls back to the default profile if no header present.
     """
     profile_id = request.headers.get('X-Profile-Id')
@@ -52,7 +48,8 @@ def get_active_profile(request) -> SellerProfile:
     if not profile:
         profile = account.profiles.filter(is_active=True).first()
     if not profile:
-        raise SellerProfile.DoesNotExist('No active profile found.')
+        # BUG 3 FIX: raise NotFound (HTTP 404) instead of DoesNotExist (HTTP 500)
+        raise NotFound('No active profile found for this account.')
     return profile
 
 
@@ -62,21 +59,23 @@ def get_or_create_onboarding(profile: SellerProfile) -> OnboardingStatus:
 
 
 def mark_section_in_progress(profile: SellerProfile, section: str):
-    os = get_or_create_onboarding(profile)
+    # BUG 5 FIX: renamed 'os' → 'onboarding' (os shadows Python stdlib)
+    onboarding = get_or_create_onboarding(profile)
     field = f'section_{section}_status'
-    if getattr(os, field) == SectionStatus.NOT_STARTED:
-        setattr(os, field, SectionStatus.IN_PROGRESS)
-        os.last_saved_at = timezone.now()
-        os.save(update_fields=[field, 'last_saved_at'])
+    if getattr(onboarding, field) == SectionStatus.NOT_STARTED:
+        setattr(onboarding, field, SectionStatus.IN_PROGRESS)
+        onboarding.last_saved_at = timezone.now()
+        onboarding.save(update_fields=[field, 'last_saved_at'])
 
 
 def mark_section_submitted(profile: SellerProfile, section: str):
-    os = get_or_create_onboarding(profile)
+    # BUG 5 FIX: renamed 'os' → 'onboarding'
+    onboarding = get_or_create_onboarding(profile)
     field = f'section_{section}_status'
-    setattr(os, field, SectionStatus.SUBMITTED)
-    os.last_saved_at = timezone.now()
-    os.save(update_fields=[field, 'last_saved_at'])
-    os.recalculate_completion()
+    setattr(onboarding, field, SectionStatus.SUBMITTED)
+    onboarding.last_saved_at = timezone.now()
+    onboarding.save(update_fields=[field, 'last_saved_at'])
+    onboarding.recalculate_completion()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -109,9 +108,9 @@ class StudioDetailsView(APIView):
         """Full save of Section A top-level fields."""
         profile  = get_active_profile(request)
         instance = StudioDetails.objects.filter(seller_profile=profile).first()
+        # BUG 9 FIX: PUT is always full replace, so partial=False always
         serializer = StudioDetailsSerializer(
-            instance, data=request.data,
-            partial=(instance is not None)
+            instance, data=request.data, partial=False
         )
         serializer.is_valid(raise_exception=True)
         serializer.save(seller_profile=profile)
@@ -120,7 +119,7 @@ class StudioDetailsView(APIView):
 
     def patch(self, request):
         """Partial auto-save (called on every field blur)."""
-        profile  = get_active_profile(request)
+        profile     = get_active_profile(request)
         instance, _ = StudioDetails.objects.get_or_create(seller_profile=profile)
         serializer  = StudioDetailsSerializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -196,7 +195,7 @@ class StudioMediaView(APIView):
         profile = get_active_profile(request)
         studio  = get_object_or_404(StudioDetails, seller_profile=profile)
         media   = get_object_or_404(StudioMedia, id=media_id, studio=studio)
-        media.file.delete(save=False)   # delete actual file from storage
+        media.file.delete(save=False)
         media.delete()
         return Response(status=204)
 
@@ -215,7 +214,7 @@ class ProductTypesView(APIView):
             return Response(None)
 
     def put(self, request):
-        profile   = get_active_profile(request)
+        profile     = get_active_profile(request)
         instance, _ = ProductTypes.objects.get_or_create(seller_profile=profile)
         serializer  = ProductTypesSerializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -367,7 +366,7 @@ class CollabDesignView(APIView):
             return Response(None)
 
     def put(self, request):
-        profile   = get_active_profile(request)
+        profile     = get_active_profile(request)
         instance, _ = CollabDesign.objects.get_or_create(seller_profile=profile)
         serializer  = CollabDesignSerializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -415,7 +414,7 @@ class ProductionScaleView(APIView):
             return Response(None)
 
     def put(self, request):
-        profile   = get_active_profile(request)
+        profile     = get_active_profile(request)
         instance, _ = ProductionScale.objects.get_or_create(seller_profile=profile)
         serializer  = ProductionScaleSerializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -457,7 +456,7 @@ class ProcessReadinessView(APIView):
             return Response(None)
 
     def put(self, request):
-        profile   = get_active_profile(request)
+        profile     = get_active_profile(request)
         instance, _ = ProcessReadiness.objects.get_or_create(seller_profile=profile)
         serializer  = ProcessReadinessSerializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -488,7 +487,7 @@ class BTSMediaView(APIView):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SELLER — Get all flags on their own profile (dashboard notification feed)
+# SELLER — Flag summary (dashboard notification feed)
 # ─────────────────────────────────────────────────────────────────────────────
 class SellerFlagSummaryView(APIView):
     """GET /api/seller/onboarding/flags/ — seller sees all unresolved admin flags."""
@@ -514,7 +513,7 @@ class SellerFlagSummaryView(APIView):
         except StudioDetails.DoesNotExist:
             pass
 
-        # Section C — Crafts
+        # Section C
         for craft in profile.crafts.filter(is_flagged=True, flag_resolved=False):
             flags.append({'section': 'C', 'model': 'craft',
                           'object_id': craft.id, 'craft_name': craft.craft_name,
@@ -553,46 +552,38 @@ class SellerFlagSummaryView(APIView):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ADMIN — Flag + Resolve endpoints
+# ADMIN — Flag + Resolve
 # ─────────────────────────────────────────────────────────────────────────────
-# Maps model name strings → (Model class, section letter)
 MODEL_MAP = {
-    'studio_details':   (StudioDetails,   'a', 'seller_profile_id'),
-    'product_types':    (ProductTypes,    'b', 'seller_profile_id'),
-    'collab_design':    (CollabDesign,    'd', 'seller_profile_id'),
-    'production_scale': (ProductionScale, 'e', 'seller_profile_id'),
-    'process_readiness':(ProcessReadiness,'f', 'seller_profile_id'),
-    # Row-level child models (require object_id, not profile_id)
-    'craft':             (CraftDetail,     'c', 'id'),
-    'fabric_answer':     (FabricAnswer,    'b', 'id'),
-    'brand_experience':  (BrandExperience, 'b', 'id'),
-    'award_mention':     (AwardMention,    'b', 'id'),
-    'studio_contact':    (StudioContact,   'a', 'id'),
-    'studio_usp':        (StudioUSP,       'a', 'id'),
-    'studio_media':      (StudioMedia,     'a', 'id'),
-    'moq_entry':         (MOQEntry,        'e', 'id'),
-    'buyer_requirement': (BuyerRequirement,'d', 'id'),
-    'bts_media':         (BTSMedia,        'f', 'id'),
+    'studio_details':    (StudioDetails,    'a', 'seller_profile_id'),
+    'product_types':     (ProductTypes,     'b', 'seller_profile_id'),
+    'collab_design':     (CollabDesign,     'd', 'seller_profile_id'),
+    'production_scale':  (ProductionScale,  'e', 'seller_profile_id'),
+    'process_readiness': (ProcessReadiness, 'f', 'seller_profile_id'),
+    'craft':             (CraftDetail,      'c', 'id'),
+    'fabric_answer':     (FabricAnswer,     'b', 'id'),
+    'brand_experience':  (BrandExperience,  'b', 'id'),
+    'award_mention':     (AwardMention,     'b', 'id'),
+    'studio_contact':    (StudioContact,    'a', 'id'),
+    'studio_usp':        (StudioUSP,        'a', 'id'),
+    'studio_media':      (StudioMedia,      'a', 'id'),
+    'moq_entry':         (MOQEntry,         'e', 'id'),
+    'buyer_requirement': (BuyerRequirement, 'd', 'id'),
+    'bts_media':         (BTSMedia,         'f', 'id'),
 }
 
-# Per-field flag pairs for models that support them
 FIELD_FLAG_MAP = {
-    'studio_details':   ['studio_name', 'location', 'years', 'website', 'poc'],
-    'collab_design':    ['designer', 'references', 'iterations'],
-    'production_scale': ['capacity', 'minimums'],
-    'process_readiness':['steps'],
+    'studio_details':    ['studio_name', 'location', 'years', 'website', 'poc'],
+    'collab_design':     ['designer', 'references', 'iterations'],
+    'production_scale':  ['capacity', 'minimums'],
+    'process_readiness': ['steps'],
 }
 
 
 class AdminFlagView(APIView):
-    """
-    POST /api/admin/seller-profiles/<profile_id>/flag/
-    Body: { model, object_id (optional), field (optional), reason }
-    """
     permission_classes = [IsAdminUser]
 
     def post(self, request, profile_id):
-        # Ensure profile exists and belongs to a real seller
         profile    = get_object_or_404(SellerProfile, id=profile_id)
         serializer = AdminFlagSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -604,40 +595,32 @@ class AdminFlagView(APIView):
 
         Model, section, lookup = MODEL_MAP[model_name]
 
-        # Resolve the instance
         if lookup == 'seller_profile_id':
             instance = get_object_or_404(Model, seller_profile=profile)
         else:
             instance = get_object_or_404(Model, id=object_id)
 
-        # Apply per-field flag if field is specified and supported
         if field and model_name in FIELD_FLAG_MAP and field in FIELD_FLAG_MAP[model_name]:
             setattr(instance, f'{field}_flagged',     True)
             setattr(instance, f'{field}_flag_reason', reason)
             instance.save(update_fields=[f'{field}_flagged', f'{field}_flag_reason'])
         else:
-            # Row-level flag
             instance.apply_flag(admin_user=request.user, reason=reason)
 
-        # Update onboarding section status
-        os = get_or_create_onboarding(profile)
-        os.flag_section(section)
+        # BUG 5 FIX: renamed 'os' → 'onboarding'
+        onboarding = get_or_create_onboarding(profile)
+        onboarding.flag_section(section)
 
         return Response({
-            'status':      'flagged',
-            'model':       model_name,
-            'field':       field or 'row',
-            'reason':      reason,
-            'profile_id':  profile_id,
+            'status':     'flagged',
+            'model':      model_name,
+            'field':      field or 'row',
+            'reason':     reason,
+            'profile_id': profile_id,
         })
 
 
 class AdminResolveFlagView(APIView):
-    """
-    POST /api/admin/seller-profiles/<profile_id>/resolve-flag/
-    Body: { model, object_id (optional), field (optional) }
-    Resolves a flag and re-evaluates section status.
-    """
     permission_classes = [IsAdminUser]
 
     def post(self, request, profile_id):
@@ -656,7 +639,6 @@ class AdminResolveFlagView(APIView):
         else:
             instance = get_object_or_404(Model, id=object_id)
 
-        # Resolve per-field flag
         if field and model_name in FIELD_FLAG_MAP and field in FIELD_FLAG_MAP[model_name]:
             setattr(instance, f'{field}_flagged',     False)
             setattr(instance, f'{field}_flag_reason', None)
@@ -664,22 +646,18 @@ class AdminResolveFlagView(APIView):
         else:
             instance.resolve_flag()
 
-        # If no more flags on this section → set back to SUBMITTED
-        os     = get_or_create_onboarding(profile)
-        field_ = f'section_{section}_status'
-        if getattr(os, field_) == SectionStatus.FLAGGED:
-            setattr(os, field_, SectionStatus.SUBMITTED)
-            os.save(update_fields=[field_])
-        os.recalculate_completion()
+        # BUG 5 FIX: renamed 'os' → 'onboarding', 'field_' → 'section_field'
+        onboarding    = get_or_create_onboarding(profile)
+        section_field = f'section_{section}_status'
+        if getattr(onboarding, section_field) == SectionStatus.FLAGGED:
+            setattr(onboarding, section_field, SectionStatus.SUBMITTED)
+            onboarding.save(update_fields=[section_field])
+        onboarding.recalculate_completion()
 
         return Response({'status': 'resolved', 'model': model_name, 'field': field or 'row'})
 
 
 class AdminSellerOnboardingView(APIView):
-    """
-    GET /api/admin/seller-profiles/<profile_id>/onboarding/
-    Admin reads the full onboarding snapshot for any profile.
-    """
     permission_classes = [IsAdminUser]
 
     def get(self, request, profile_id):
@@ -688,10 +666,6 @@ class AdminSellerOnboardingView(APIView):
 
 
 class AdminSellerProfileListView(APIView):
-    """
-    GET /api/admin/seller-profiles/
-    Lists all profiles with their completion % and flag count.
-    """
     permission_classes = [IsAdminUser]
 
     def get(self, request):
@@ -702,12 +676,16 @@ class AdminSellerProfileListView(APIView):
         data = []
         for p in profiles:
             try:
-                os = p.onboarding_status
-                completion = os.completion_percentage
-                section_statuses = {
-                    'A': os.section_a_status, 'B': os.section_b_status,
-                    'C': os.section_c_status, 'D': os.section_d_status,
-                    'E': os.section_e_status, 'F': os.section_f_status,
+                # BUG 5 FIX: renamed 'os' → 'onboarding_status'
+                onboarding_status = p.onboarding_status
+                completion        = onboarding_status.completion_percentage
+                section_statuses  = {
+                    'A': onboarding_status.section_a_status,
+                    'B': onboarding_status.section_b_status,
+                    'C': onboarding_status.section_c_status,
+                    'D': onboarding_status.section_d_status,
+                    'E': onboarding_status.section_e_status,
+                    'F': onboarding_status.section_f_status,
                 }
                 flagged_sections = [k for k, v in section_statuses.items() if v == SectionStatus.FLAGGED]
             except OnboardingStatus.DoesNotExist:

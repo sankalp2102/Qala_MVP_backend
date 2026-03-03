@@ -14,15 +14,21 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+# Qala/urls.py
 from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from supertokens_python.framework.django.django_middleware import middleware
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('auth/',         include('supertokens_python.framework.django.urls')),  # SuperTokens routes
-    path('api/', include('core.urls')),    
-    path('api/',          include('seller_profile.urls')),
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    # SuperTokens auth routes (/auth/signin, /auth/signout, etc.) are handled
+    # automatically by core.middleware.SuperTokensSessionMiddleware — no include needed.
+    path('api/',   include('core.urls')),
+    path('api/',   include('seller_profile.urls')),
+]
+
+# BUG 6 FIX: only serve media files in DEBUG mode (static() is a no-op in prod anyway
+# but this makes intent explicit and avoids the unused middleware import)
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

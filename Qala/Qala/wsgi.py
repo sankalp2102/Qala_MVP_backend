@@ -10,7 +10,7 @@ https://docs.djangoproject.com/en/5.1/howto/deployment/wsgi/
 # Qala/wsgi.py
 import os
 from django.core.wsgi import get_wsgi_application
-from supertokens_python.framework.django.django_middleware import Middleware
+from supertokens_python.framework.django.django_middleware import middleware
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Qala.settings.production')
-application = Middleware(get_wsgi_application())
+application = middleware(get_wsgi_application())

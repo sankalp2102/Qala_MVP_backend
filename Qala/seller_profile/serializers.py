@@ -22,7 +22,6 @@ MAX_VIDEO_MB = 100
 
 
 def detect_mime(file) -> str:
-    """Read first 2KB to detect real MIME type (ignores client Content-Type)."""
     header = file.read(2048)
     file.seek(0)
     return magic.from_buffer(header, mime=True)
@@ -40,7 +39,6 @@ def validate_file(file, allowed: set, max_mb: int):
 
 
 def auto_fill_file_meta(validated_data: dict, file_field: str = 'file') -> dict:
-    """Populate file_name, mime_type, file_size_kb automatically from the upload."""
     f = validated_data.get(file_field)
     if f:
         validated_data['file_name']    = f.name
@@ -116,18 +114,14 @@ class StudioDetailsSerializer(serializers.ModelSerializer):
     class Meta:
         model  = StudioDetails
         fields = [
-            # Core fields
             'id', 'studio_name', 'location_city', 'location_state',
             'years_in_operation', 'website_url', 'instagram_url', 'poc_working_style',
-            # Per-field flags (read-only for seller; writable only by admin)
             'studio_name_flagged', 'studio_name_flag_reason',
             'location_flagged',    'location_flag_reason',
             'years_flagged',       'years_flag_reason',
             'website_flagged',     'website_flag_reason',
             'poc_flagged',         'poc_flag_reason',
-            # Row-level flag
             'is_flagged', 'flag_reason', 'flag_resolved',
-            # Nested children
             'contacts', 'usps', 'media_files',
         ]
         read_only_fields = [
@@ -171,10 +165,6 @@ class FabricAnswerSerializer(serializers.ModelSerializer):
 
 
 class FabricAnswerBulkSerializer(serializers.Serializer):
-    """
-    Accepts a list of fabric answers and upserts them in bulk.
-    PUT /api/seller/onboarding/fabrics/
-    """
     fabrics = FabricAnswerSerializer(many=True)
 
     def update(self, seller_profile, validated_data):
@@ -212,10 +202,10 @@ class BrandExperienceSerializer(serializers.ModelSerializer):
         return file
 
     def create(self, validated_data):
-        return super().create(auto_fill_file_meta(validated_data))
+        return super().create(auto_fill_file_meta(validated_data, file_field='image'))
 
     def update(self, instance, validated_data):
-        auto_fill_file_meta(validated_data)
+        auto_fill_file_meta(validated_data, file_field='image')
         return super().update(instance, validated_data)
 
 
@@ -368,60 +358,56 @@ class ProcessReadinessSerializer(serializers.ModelSerializer):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ADMIN FLAG SERIALIZERS  — used in admin-only flag + resolve endpoints
+# ADMIN FLAG SERIALIZERS
 # ─────────────────────────────────────────────────────────────────────────────
+# BUG 4 FIX: Both serializers declare their own independent 'model' ChoiceField.
+# The old code did: model = AdminFlagSerializer().fields['model']
+# That stole a bound field instance from another serializer — shared mutable
+# state that corrupts validation on concurrent requests.
+
+FLAGGABLE_MODELS = [
+    'studio_details', 'product_types', 'craft',
+    'collab_design', 'production_scale', 'process_readiness',
+    'fabric_answer', 'brand_experience', 'award_mention',
+    'studio_contact', 'studio_usp', 'studio_media',
+    'moq_entry', 'buyer_requirement', 'bts_media',
+]
+
+
 class AdminFlagSerializer(serializers.Serializer):
-    """
-    POST /api/admin/seller-profiles/<profile_id>/flag/
-    Body: { model, field, reason }
-    field is optional — if omitted, flags the whole model row.
-    """
-    model  = serializers.ChoiceField(choices=[
-        'studio_details', 'product_types', 'craft',
-        'collab_design', 'production_scale', 'process_readiness',
-        'fabric_answer', 'brand_experience', 'award_mention',
-        'studio_contact', 'studio_usp', 'studio_media',
-        'moq_entry', 'buyer_requirement', 'bts_media',
-    ])
+    model     = serializers.ChoiceField(choices=FLAGGABLE_MODELS)
     object_id = serializers.IntegerField(
         required=False,
         help_text='Required for child-row models (craft, fabric_answer, etc.)'
     )
-    field  = serializers.CharField(
+    field     = serializers.CharField(
         required=False, allow_blank=True,
-        help_text='Specific field name to flag (e.g. studio_name). Leave blank to flag the whole row.'
+        help_text='Specific field to flag. Leave blank to flag the whole row.'
     )
-    reason = serializers.CharField(max_length=1000)
+    reason    = serializers.CharField(max_length=1000)
 
 
 class AdminResolveFlagSerializer(serializers.Serializer):
-    """
-    POST /api/admin/seller-profiles/<profile_id>/resolve-flag/
-    Body: { model, object_id, field }
-    """
-    model     = AdminFlagSerializer().fields['model']
+    # BUG 4 FIX: independent ChoiceField — not borrowed from AdminFlagSerializer
+    model     = serializers.ChoiceField(choices=FLAGGABLE_MODELS)
     object_id = serializers.IntegerField(required=False)
     field     = serializers.CharField(required=False, allow_blank=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FULL ONBOARDING READ SERIALIZER  — GET /api/seller/onboarding/
+# FULL ONBOARDING READ SERIALIZER
 # ─────────────────────────────────────────────────────────────────────────────
 class FullOnboardingSerializer(serializers.Serializer):
-    """
-    Read-only aggregator. Returns the complete onboarding snapshot
-    for a SellerProfile in one API call — used to hydrate the seller dashboard.
-    """
-    status             = serializers.SerializerMethodField()
-    studio_details     = serializers.SerializerMethodField()
-    product_types      = serializers.SerializerMethodField()
-    fabric_answers     = serializers.SerializerMethodField()
-    brand_experiences  = serializers.SerializerMethodField()
-    awards             = serializers.SerializerMethodField()
-    crafts             = serializers.SerializerMethodField()
-    collab_design      = serializers.SerializerMethodField()
-    production_scale   = serializers.SerializerMethodField()
-    process_readiness  = serializers.SerializerMethodField()
+    status            = serializers.SerializerMethodField()
+    studio_details    = serializers.SerializerMethodField()
+    product_types     = serializers.SerializerMethodField()
+    fabric_answers    = serializers.SerializerMethodField()
+    brand_experiences = serializers.SerializerMethodField()
+    awards            = serializers.SerializerMethodField()
+    crafts            = serializers.SerializerMethodField()
+    collab_design     = serializers.SerializerMethodField()
+    production_scale  = serializers.SerializerMethodField()
+    process_readiness = serializers.SerializerMethodField()
 
     def _try(self, fn):
         try:

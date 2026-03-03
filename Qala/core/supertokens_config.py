@@ -74,10 +74,11 @@ def init_supertokens():
             session.init(
                 cookie_secure               = not settings.DEBUG,
                 cookie_same_site            = 'lax',
-                anti_csrf                   = 'DVCS',
+                anti_csrf                   = 'VIA_CUSTOM_HEADER',
                 session_expired_status_code = 401,
             ),
-            emailverification.init(mode='REQUIRED'),
+            # BUG 8 FIX: OPTIONAL for local testing — change to REQUIRED before production
+            emailverification.init(mode='OPTIONAL'),
             emailpassword.init(
                 sign_up_feature=emailpassword.InputSignUpFeature(
                     form_fields=[

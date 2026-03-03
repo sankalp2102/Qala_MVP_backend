@@ -4,9 +4,9 @@ from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from supertokens_python.recipe.session.syncio import get_session
 from supertokens_python.recipe.session.exceptions import (
-    UnauthorisedException,
-    TokenTheftDetectedException,
-    TryRefreshTokenException,
+    UnauthorisedError,          # was: UnauthorisedException
+    TokenTheftError,            # was: TokenTheftDetectedException
+    TryRefreshTokenError,       # was: TryRefreshTokenException
 )
 from .models import User
 
@@ -18,17 +18,17 @@ class SuperTokensAuthentication(BaseAuthentication):
     def authenticate(self, request):
         try:
             session = get_session(request, session_required=False)
-        except TryRefreshTokenException:
+        except TryRefreshTokenError:
             raise AuthenticationFailed(
                 detail={'message': 'Session expired. Please refresh.', 'code': 'TRY_REFRESH_TOKEN'},
                 code=401,
             )
-        except TokenTheftDetectedException:
+        except TokenTheftError:
             raise AuthenticationFailed(
                 detail={'message': 'Token theft detected. Please log in again.', 'code': 'TOKEN_THEFT'},
                 code=401,
             )
-        except UnauthorisedException:
+        except UnauthorisedError:
             raise AuthenticationFailed(
                 detail={'message': 'Invalid or expired session.', 'code': 'UNAUTHORISED'},
                 code=401,

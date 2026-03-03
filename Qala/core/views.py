@@ -28,7 +28,8 @@ def _st_headers():
 
 
 def _create_supertokens_user(email: str, password: str) -> str:
-    url  = f"{settings.SUPERTOKENS['SUPERTOKENS_URL']}/recipe/user"
+    # BUG 1 FIX: correct endpoint is /recipe/signup not /recipe/user
+    url  = f"{settings.SUPERTOKENS['SUPERTOKENS_URL']}/recipe/signup"
     resp = requests.post(
         url,
         json    = {'email': email, 'password': password},
@@ -43,12 +44,14 @@ def _create_supertokens_user(email: str, password: str) -> str:
 
 
 def _assign_supertokens_role(supertokens_id: str, role: str):
+    # Create the role first (idempotent — safe to call even if role exists)
     requests.put(
         f"{settings.SUPERTOKENS['SUPERTOKENS_URL']}/recipe/role",
         json    = {'role': role, 'permissions': [role]},
         headers = _st_headers(),
         timeout = 10,
     )
+    # Assign the role to the user
     resp = requests.put(
         f"{settings.SUPERTOKENS['SUPERTOKENS_URL']}/recipe/user/role",
         json    = {'userId': supertokens_id, 'role': role, 'tenantId': 'public'},
@@ -166,9 +169,9 @@ class SellerProfileSwitchView(APIView):
         account = get_object_or_404(SellerAccount, user=request.user)
         profile = get_object_or_404(
             SellerProfile,
-            id           = profile_id,
+            id             = profile_id,
             seller_account = account,
-            is_active    = True,
+            is_active      = True,
         )
         return Response({
             'active_profile': SellerProfileSerializer(profile).data,
