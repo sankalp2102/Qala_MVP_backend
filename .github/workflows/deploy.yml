@@ -4,6 +4,10 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -48,22 +52,12 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} '
             set -e
-
-            # Login to GitHub Container Registry
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-            # Pull the pre-built image
             docker pull ghcr.io/sankalp2102/qala-backend:latest
-
-            # Update compose to use pre-built image instead of building
             cd /home/tech/supertokens-auth
             docker compose up -d django
             sleep 5
-
-            # Run migrations
             docker compose exec -T django python manage.py migrate --noinput
             docker compose exec -T django python manage.py collectstatic --noinput
-
             echo "Deploy complete"
           '
-          
