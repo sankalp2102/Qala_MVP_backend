@@ -1,0 +1,190 @@
+# Copyright (c) 2021, VRAI Labs and/or its affiliates. All rights reserved.
+#
+# This software is licensed under the Apache License, Version 2.0 (the
+# "License") as published by the Apache Software Foundation.
+#
+# You may not use this file except in compliance with the License. You may
+# obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+import json
+
+from fastapi import FastAPI
+from pytest import fixture, mark
+from supertokens_python import init
+from supertokens_python.framework.fastapi import get_middleware
+from supertokens_python.recipe import emailpassword, passwordless, session, thirdparty
+from supertokens_python.recipe.multitenancy.asyncio import (
+    create_or_update_third_party_config,
+)
+from supertokens_python.recipe.thirdparty.provider import (
+    ProviderClientConfig,
+    ProviderConfig,
+)
+
+from tests.testclient import TestClientWithNoCookieJar as TestClient
+from tests.utils import get_new_core_app_url, get_st_init_args
+
+pytestmark = mark.asyncio
+
+
+@fixture(scope="function")
+def app():
+    app = FastAPI()
+    app.add_middleware(get_middleware())
+
+    return TestClient(app)
+
+
+async def test_calling_authorisation_url_api_with_empty_init(app: TestClient):
+    args = get_st_init_args(
+        url=get_new_core_app_url(),
+        recipe_list=[
+            session.init(
+                get_token_transfer_method=lambda _, __, ___: "cookie",
+                anti_csrf="VIA_TOKEN",
+            ),
+            thirdparty.init(),
+        ],
+    )
+    init(**args)
+
+    res = app.get(
+        "/auth/authorisationurl?thirdPartyId=google&redirectURIOnProviderDashboard=redirect"
+    )
+    assert res.status_code == 400
+    assert res.json() == {
+        "message": "the provider google could not be found in the configuration"
+    }
+
+
+async def test_calling_authorisation_url_api_with_empty_init_with_dynamic_thirdparty_provider(
+    app: TestClient,
+):
+    args = get_st_init_args(
+        url=get_new_core_app_url(),
+        recipe_list=[
+            session.init(
+                get_token_transfer_method=lambda _, __, ___: "cookie",
+                anti_csrf="VIA_TOKEN",
+            ),
+            thirdparty.init(),
+        ],
+    )
+    init(**args)
+
+    await create_or_update_third_party_config(
+        "public",
+        ProviderConfig(
+            third_party_id="google",
+            name="Google",
+            clients=[
+                ProviderClientConfig(
+                    client_id="google-client-id",
+                    client_secret="google-client-secret",
+                )
+            ],
+        ),
+    )
+
+    res = app.get(
+        "/auth/authorisationurl?thirdPartyId=google&redirectURIOnProviderDashboard=redirect"
+    )
+    body = json.loads(res.text)
+    assert body["status"] == "OK"
+    assert (
+        body["urlWithQueryParams"]
+        == "https://accounts.google.com/o/oauth2/v2/auth?client_id=google-client-id&redirect_uri=redirect&response_type=code&scope=openid+email&included_grant_scopes=true&access_type=offline"
+    )
+
+
+async def test_using_thirdpartyemailpassword_still_works(
+    app: TestClient,
+):
+    args = get_st_init_args(
+        url=get_new_core_app_url(),
+        recipe_list=[
+            session.init(
+                get_token_transfer_method=lambda _, __, ___: "cookie",
+                anti_csrf="VIA_TOKEN",
+            ),
+            thirdparty.init(),
+            emailpassword.init(),
+        ],
+    )
+    init(**args)
+
+    await create_or_update_third_party_config(
+        "public",
+        ProviderConfig(
+            third_party_id="google",
+            name="Google",
+            clients=[
+                ProviderClientConfig(
+                    client_id="google-client-id",
+                    client_secret="google-client-secret",
+                )
+            ],
+        ),
+    )
+
+    res = app.get(
+        "/auth/authorisationurl?thirdPartyId=google&redirectURIOnProviderDashboard=redirect",
+        headers={"rid": "thirdpartyemailpassword"},
+    )
+    body = json.loads(res.text)
+    assert body["status"] == "OK"
+    assert (
+        body["urlWithQueryParams"]
+        == "https://accounts.google.com/o/oauth2/v2/auth?client_id=google-client-id&redirect_uri=redirect&response_type=code&scope=openid+email&included_grant_scopes=true&access_type=offline"
+    )
+
+
+async def test_using_thirdpartypasswordless_still_works(
+    app: TestClient,
+):
+    args = get_st_init_args(
+        url=get_new_core_app_url(),
+        recipe_list=[
+            session.init(
+                get_token_transfer_method=lambda _, __, ___: "cookie",
+                anti_csrf="VIA_TOKEN",
+            ),
+            thirdparty.init(),
+            emailpassword.init(),
+            passwordless.init(
+                contact_config=passwordless.ContactConfig("EMAIL_OR_PHONE"),
+                flow_type="USER_INPUT_CODE_AND_MAGIC_LINK",
+            ),
+        ],
+    )
+    init(**args)
+
+    await create_or_update_third_party_config(
+        "public",
+        ProviderConfig(
+            third_party_id="google",
+            name="Google",
+            clients=[
+                ProviderClientConfig(
+                    client_id="google-client-id",
+                    client_secret="google-client-secret",
+                )
+            ],
+        ),
+    )
+
+    res = app.get(
+        "/auth/authorisationurl?thirdPartyId=google&redirectURIOnProviderDashboard=redirect",
+        headers={"rid": "thirdpartypasswordless"},
+    )
+    body = json.loads(res.text)
+    assert body["status"] == "OK"
+    assert (
+        body["urlWithQueryParams"]
+        == "https://accounts.google.com/o/oauth2/v2/auth?client_id=google-client-id&redirect_uri=redirect&response_type=code&scope=openid+email&included_grant_scopes=true&access_type=offline"
+    )
