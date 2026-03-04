@@ -22,8 +22,8 @@ CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', cast=Csv())
 
 SECURE_PROXY_SSL_HEADER        = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_SSL_REDIRECT            = False
-SESSION_COOKIE_SECURE          = True
-CSRF_COOKIE_SECURE             = True
+SESSION_COOKIE_SECURE = config('SESSION_COOKIE_SECURE', default=True, cast=bool)
+CSRF_COOKIE_SECURE    = config('CSRF_COOKIE_SECURE', default=True, cast=bool)
 CSRF_TRUSTED_ORIGINS = [
     o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', 'http://34.169.72.66').split(',')
 ]
