@@ -1,4 +1,6 @@
 # Qala/settings/production.py
+import os
+
 from .base import *
 from decouple import config, Csv
 
@@ -22,6 +24,9 @@ SECURE_PROXY_SSL_HEADER        = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_SSL_REDIRECT            = False
 SESSION_COOKIE_SECURE          = True
 CSRF_COOKIE_SECURE             = True
+CSRF_TRUSTED_ORIGINS = [
+    o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', 'http://34.169.72.66').split(',')
+]
 SECURE_HSTS_SECONDS            = 31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_CONTENT_TYPE_NOSNIFF    = True
