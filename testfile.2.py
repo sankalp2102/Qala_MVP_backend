@@ -2,7 +2,6 @@
 """
 Qala Discovery Engine — Test Script
 Run this on your Mac against your local Django server.
-
 Setup:
     1. Start Django locally:
            cd /path/to/Qala
@@ -19,7 +18,6 @@ ones, so the session_token is carried across automatically.
 """
 
 import sys
-import json
 import time
 import requests
 
