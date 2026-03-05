@@ -26,6 +26,7 @@ urlpatterns = [
     # automatically by core.middleware.SuperTokensSessionMiddleware — no include needed.
     path('api/',   include('core.urls')),
     path('api/',   include('seller_profile.urls')),
+    path('api/',   include('discovery.urls')),
 ]
 
 # BUG 6 FIX: only serve media files in DEBUG mode (static() is a no-op in prod anyway

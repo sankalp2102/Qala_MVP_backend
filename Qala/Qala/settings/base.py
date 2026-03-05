@@ -18,6 +18,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'core',            # ← auth, users, permissions
     'seller_profile',
+    'discovery',
 ]
 
 MIDDLEWARE = [
