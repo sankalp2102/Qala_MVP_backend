@@ -8,7 +8,7 @@ from rest_framework import status
 
 from core.models import SellerProfile
 from seller_profile.models import StudioMedia
-from .models import BuyerProfile, StudioRecommendation, JourneyStage
+from .models import BuyerProfile, StudioRecommendation, JourneyStage, CustomInquiry
 from .serializers import (
     ReadinessCheckSerializer,
     VisualGridImageSerializer,
@@ -376,3 +376,35 @@ class LinkSessionView(APIView):
             'session_token':    str(buyer.session_token),
             'message':         'Session linked to your account',
         })
+        
+class CustomInquiryView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        name    = (request.data.get('name')    or '').strip()
+        email   = (request.data.get('email')   or '').strip()
+        message = (request.data.get('message') or '').strip()
+        session_token = (request.data.get('session_token') or '').strip()
+
+        if not name or not email or not message:
+            return Response(
+                {'error': 'name, email and message are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Try to link to existing buyer profile
+        buyer_profile = None
+        if session_token:
+            try:
+                buyer_profile = BuyerProfile.objects.get(session_token=session_token)
+            except (BuyerProfile.DoesNotExist, Exception):
+                pass
+
+        CustomInquiry.objects.create(
+            name=name,
+            email=email,
+            message=message,
+            buyer_profile=buyer_profile,
+        )
+
+        return Response({'status': 'ok'}, status=status.HTTP_201_CREATED)

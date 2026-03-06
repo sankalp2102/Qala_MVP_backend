@@ -1,6 +1,6 @@
 # discovery/admin.py
 from django.contrib import admin
-from .models import BuyerProfile, StudioRecommendation
+from .models import BuyerProfile, StudioRecommendation, CustomInquiry
 
 
 @admin.register(BuyerProfile)
@@ -27,3 +27,11 @@ class StudioRecommendationAdmin(admin.ModelAdmin):
     readonly_fields = ['id', 'created_at']
     ordering       = ['buyer_profile', 'rank_position']
     raw_id_fields  = ['buyer_profile', 'seller_profile']
+    
+@admin.register(CustomInquiry)
+class CustomInquiryAdmin(admin.ModelAdmin):
+    list_display  = ['name', 'email', 'created_at', 'buyer_profile']
+    list_filter   = ['created_at']
+    search_fields = ['name', 'email', 'message']
+    readonly_fields = ['id', 'created_at', 'buyer_profile']
+    ordering = ['-created_at']

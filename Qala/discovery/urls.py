@@ -7,6 +7,7 @@ from .views import (
     EditRecommendationsView,
     SessionResumeView,
     LinkSessionView,
+    CustomInquiryView,
 )
 
 urlpatterns = [
@@ -27,4 +28,7 @@ urlpatterns = [
 
     # Link anonymous session to a logged-in user account (called after register/login)
     path('discovery/link-session/',         LinkSessionView.as_view()),
+    
+    # Custom inquiry form submission
+    path('discovery/custom-inquiry/',       CustomInquiryView.as_view()),
 ]

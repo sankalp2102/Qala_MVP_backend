@@ -192,3 +192,29 @@ class StudioRecommendation(models.Model):
 
     def __str__(self):
         return f'Rec #{self.rank_position} -> {self.seller_profile} for {self.buyer_profile}'
+    
+# ─────────────────────────────────────────────────────────────────────────────
+# CUSTOM INQUIRY
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CustomInquiry(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    name          = models.CharField(max_length=200)
+    email         = models.EmailField()
+    message       = models.TextField()
+
+    # Attach the session so admin can see their full questionnaire answers
+    buyer_profile = models.ForeignKey(
+        BuyerProfile, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='custom_inquiries',
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'custom_inquiries'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Inquiry from {self.name} <{self.email}>'
