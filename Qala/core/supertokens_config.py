@@ -76,8 +76,6 @@ def init_supertokens():
                 cookie_same_site            = 'lax',
                 anti_csrf                   = 'VIA_CUSTOM_HEADER',
                 session_expired_status_code = 401,
-                access_token_validity       = 7 * 24 * 60 * 60 * 1000,
-                refresh_token_validity      = 365 * 24 * 60 * 60 * 1000,
             ),
             # BUG 8 FIX: OPTIONAL for local testing — change to REQUIRED before production
             emailverification.init(mode='OPTIONAL'),
