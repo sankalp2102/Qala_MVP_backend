@@ -256,6 +256,29 @@ class EditRecommendationsView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        # ── Handle suggestion patch (zero match relaxation) ──────────────────
+        apply_patch = request.data.get('apply_suggestion')
+        if apply_patch:
+            # apply_patch is a dict of field overrides e.g. {'craft_is_flexible': True}
+            for field, value in apply_patch.items():
+                if hasattr(buyer, field):
+                    setattr(buyer, field, value)
+            buyer.matching_complete      = False
+            buyer.zero_match_suggestions = []
+            buyer.save()
+
+            try:
+                run_matching(buyer)
+            except Exception as e:
+                logger.error(f'Suggestion matching failed for buyer {buyer.id}: {e}', exc_info=True)
+                return Response(
+                    {'status': 'error', 'message': 'Matching failed. Please try again.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            return Response(_recommendations_response(buyer, request))
+
+        # ── Handle full questionnaire edit ────────────────────────────────────
         serializer = ReadinessCheckSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(
@@ -264,8 +287,6 @@ class EditRecommendationsView(APIView):
             )
 
         data = serializer.validated_data
-
-        # Update only the fields that were sent — keep everything else as-is
         buyer.product_types        = data.get('product_types',        buyer.product_types)
         buyer.fabrics              = data.get('fabrics',              buyer.fabrics)
         buyer.fabric_is_flexible   = data.get('fabric_is_flexible',   buyer.fabric_is_flexible)
