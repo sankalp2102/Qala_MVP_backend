@@ -8,6 +8,9 @@ from .views import (
     SessionResumeView,
     LinkSessionView,
     CustomInquiryView,
+    AdminDiscoveryBuyerListView,
+    AdminDiscoveryBuyerDetailView,
+    AdminDiscoveryInquiryListView,
 )
 
 urlpatterns = [
@@ -31,4 +34,10 @@ urlpatterns = [
     
     # Custom inquiry form submission
     path('discovery/custom-inquiry/',       CustomInquiryView.as_view()),
+    
+    # Admin
+    path('admin/discovery/buyers/',              AdminDiscoveryBuyerListView.as_view()),
+    path('admin/discovery/buyers/<uuid:buyer_id>/', AdminDiscoveryBuyerDetailView.as_view()),
+    path('admin/discovery/inquiries/',           AdminDiscoveryInquiryListView.as_view()),
+
 ]

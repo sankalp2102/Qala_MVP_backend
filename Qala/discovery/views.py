@@ -377,13 +377,17 @@ class LinkSessionView(APIView):
             'message':         'Session linked to your account',
         })
         
+# ─────────────────────────────────────────────────────────────────────────────
+# CUSTOM INQUIRY
+# ─────────────────────────────────────────────────────────────────────────────
+
 class CustomInquiryView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        name    = (request.data.get('name')    or '').strip()
-        email   = (request.data.get('email')   or '').strip()
-        message = (request.data.get('message') or '').strip()
+        name          = (request.data.get('name')          or '').strip()
+        email         = (request.data.get('email')         or '').strip()
+        message       = (request.data.get('message')       or '').strip()
         session_token = (request.data.get('session_token') or '').strip()
 
         if not name or not email or not message:
@@ -392,13 +396,13 @@ class CustomInquiryView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Try to link to existing buyer profile
         buyer_profile = None
         if session_token:
             try:
                 buyer_profile = BuyerProfile.objects.get(session_token=session_token)
             except (BuyerProfile.DoesNotExist, Exception):
                 pass
+
 
         CustomInquiry.objects.create(
             name=name,
@@ -408,3 +412,190 @@ class CustomInquiryView(APIView):
         )
 
         return Response({'status': 'ok'}, status=status.HTTP_201_CREATED)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADMIN — DISCOVERY
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AdminDiscoveryBuyerListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_staff and getattr(request.user, 'role', None) != 'admin':
+            return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+
+        buyers = BuyerProfile.objects.prefetch_related(
+            'recommendations'
+        ).order_by('-created_at')
+
+        data = []
+        for b in buyers:
+            rec_count   = b.recommendations.filter(is_bonus_visual=False).count()
+            bonus_count = b.recommendations.filter(is_bonus_visual=True).count()
+            data.append({
+                'id':                str(b.id),
+                'session_token':     str(b.session_token),
+                'name':              f'{b.first_name or ""} {b.last_name or ""}'.strip() or None,
+                'user_email':        b.user.email if b.user else None,
+                'journey_stage':     b.journey_stage,
+                'batch_size':        b.batch_size,
+                'timeline':          b.timeline,
+                'product_types':     b.product_types,
+                'crafts':            b.crafts,
+                'fabrics':           b.fabrics,
+                'craft_interest':    b.craft_interest,
+                'process_stage':     b.process_stage,
+                'matching_complete': b.matching_complete,
+                'zero_match':        b.matching_complete and rec_count == 0,
+                'rec_count':         rec_count,
+                'bonus_count':       bonus_count,
+                'created_at':        b.created_at.isoformat(),
+            })
+
+        # Summary stats
+        total        = len(data)
+        zero_match   = sum(1 for d in data if d['zero_match'])
+        has_match    = sum(1 for d in data if d['rec_count'] > 0)
+        linked_users = sum(1 for d in data if d['user_email'])
+
+        # Top crafts
+        from collections import Counter
+        all_crafts = []
+        for d in data:
+            all_crafts.extend(d['crafts'] or [])
+        top_crafts = [{'craft': k, 'count': v} for k, v in Counter(all_crafts).most_common(8)]
+
+        # Top products
+        all_products = []
+        for d in data:
+            all_products.extend(d['product_types'] or [])
+        top_products = [{'product': k, 'count': v} for k, v in Counter(all_products).most_common(8)]
+
+        return Response({
+            'status': 'ok',
+            'stats': {
+                'total':        total,
+                'has_match':    has_match,
+                'zero_match':   zero_match,
+                'linked_users': linked_users,
+            },
+            'top_crafts':   top_crafts,
+            'top_products': top_products,
+            'buyers':       data,
+        })
+
+
+class AdminDiscoveryBuyerDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, buyer_id):
+        if not request.user.is_staff and getattr(request.user, 'role', None) != 'admin':
+            return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            buyer = BuyerProfile.objects.prefetch_related(
+                'recommendations__seller_profile__studio_details',
+            ).get(id=buyer_id)
+        except BuyerProfile.DoesNotExist:
+            return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        recs = []
+        for r in buyer.recommendations.filter(is_bonus_visual=False).order_by('rank_position'):
+            try:
+                sd = r.seller_profile.studio_details
+                studio_name = sd.studio_name if sd else None
+                location = ', '.join(filter(None, [sd.location_city, sd.location_state])) if sd else None
+            except Exception:
+                studio_name = None
+                location = None
+            recs.append({
+                'rank_position': r.rank_position,
+                'ranking':       r.ranking,
+                'studio_id':     r.seller_profile.id,
+                'studio_name':   studio_name,
+                'location':      location,
+                'core_capability_fit': r.core_capability_fit,
+                'moq_fit':            r.moq_fit,
+                'craft_approach_fit': r.craft_approach_fit,
+                'visual_affinity':    r.visual_affinity,
+                'match_reasoning':    r.match_reasoning,
+                'what_best_at':       r.what_best_at,
+                'what_to_keep_in_mind': r.what_to_keep_in_mind,
+            })
+
+        from .models import CustomInquiry
+        inquiries = []
+        for inq in CustomInquiry.objects.filter(buyer_profile=buyer).order_by('-created_at'):
+            inquiries.append({
+                'id':         str(inq.id),
+                'name':       inq.name,
+                'email':      inq.email,
+                'message':    inq.message,
+                'created_at': inq.created_at.isoformat(),
+            })
+
+        return Response({
+            'status': 'ok',
+            'buyer': {
+                'id':             str(buyer.id),
+                'session_token':  str(buyer.session_token),
+                'name':           f'{buyer.first_name or ""} {buyer.last_name or ""}'.strip() or None,
+                'user_email':     buyer.user.email if buyer.user else None,
+                'journey_stage':  buyer.journey_stage,
+                'product_types':  buyer.product_types,
+                'fabrics':        buyer.fabrics,
+                'fabric_is_flexible': buyer.fabric_is_flexible,
+                'fabric_not_sure':    buyer.fabric_not_sure,
+                'craft_interest': buyer.craft_interest,
+                'crafts':         buyer.crafts,
+                'craft_is_flexible': buyer.craft_is_flexible,
+                'craft_not_sure':    buyer.craft_not_sure,
+                'experimentation':   buyer.experimentation,
+                'process_stage':     buyer.process_stage,
+                'design_support':    buyer.design_support,
+                'timeline':          buyer.timeline,
+                'batch_size':        buyer.batch_size,
+                'matching_complete': buyer.matching_complete,
+                'zero_match_suggestions': buyer.zero_match_suggestions,
+                'created_at':        buyer.created_at.isoformat(),
+                'updated_at':        buyer.updated_at.isoformat(),
+            },
+            'recommendations': recs,
+            'inquiries':       inquiries,
+        })
+
+
+class AdminDiscoveryInquiryListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_staff and getattr(request.user, 'role', None) != 'admin':
+            return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        from .models import CustomInquiry
+        inquiries = CustomInquiry.objects.select_related(
+            'buyer_profile'
+        ).order_by('-created_at')
+
+        data = []
+        for inq in inquiries:
+            b = inq.buyer_profile
+            data.append({
+                'id':         str(inq.id),
+                'name':       inq.name,
+                'email':      inq.email,
+                'message':    inq.message,
+                'created_at': inq.created_at.isoformat(),
+                'buyer': {
+                    'id':            str(b.id) if b else None,
+                    'journey_stage': b.journey_stage if b else None,
+                    'product_types': b.product_types if b else [],
+                    'crafts':        b.crafts if b else [],
+                    'batch_size':    b.batch_size if b else None,
+                    'timeline':      b.timeline if b else None,
+                } if b else None,
+            })
+
+        return Response({'status': 'ok', 'count': len(data), 'inquiries': data})
