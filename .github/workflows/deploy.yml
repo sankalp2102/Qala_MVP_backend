@@ -40,14 +40,13 @@ jobs:
 
       - name: Write .env to VM
         run: |
-          printf 'DJANGO_SECRET_KEY=%s\nDJANGO_DEBUG=False\nDJANGO_ALLOWED_HOSTS=34.169.72.66,localhost\nDB_NAME=qala_db\nDB_USER=qala_user\nDB_PASSWORD=%s\nDB_HOST=django_db\nDB_PORT=5432\nSUPERTOKENS_URL=http://supertokens:3567\nSUPERTOKENS_API_KEY=%s\nSUPERTOKENS_APP_NAME=Qala\nSUPERTOKENS_API_DOMAIN=http://34.169.72.66\nSUPERTOKENS_WEBSITE_DOMAIN=http://34.169.72.66\nSUPERTOKENS_HOOK_SECRET=%s\nCORS_ALLOWED_ORIGINS=http://34.169.72.66,http://localhost:5173,http://localhost:3000\n' \
+          printf 'DJANGO_SECRET_KEY=%s\nDJANGO_DEBUG=False\nDJANGO_ALLOWED_HOSTS=*\nDB_NAME=qala_db\nDB_USER=qala_user\nDB_PASSWORD=%s\nDB_HOST=django_db\nDB_PORT=5432\nSUPERTOKENS_URL=http://supertokens:3567\nSUPERTOKENS_API_KEY=%s\nSUPERTOKENS_APP_NAME=Qala\nSUPERTOKENS_API_DOMAIN=http://${{ secrets.VM_HOST }}\nSUPERTOKENS_WEBSITE_DOMAIN=http://${{ secrets.VM_HOST }}\nSUPERTOKENS_HOOK_SECRET=%s\nCORS_ALLOWED_ORIGINS=http://${{ secrets.VM_HOST }},http://localhost:5173,http://localhost:3000\n' \
             "${{ secrets.DJANGO_SECRET_KEY }}" \
             "${{ secrets.DB_PASSWORD }}" \
             "${{ secrets.SUPERTOKENS_API_KEY }}" \
             "${{ secrets.SUPERTOKENS_HOOK_SECRET }}" \
             > .env.production
           scp -i ~/.ssh/deploy_key .env.production ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/home/tech/qala-backend/.env
-
       - name: Deploy on VM
         run: |
           ssh -i ~/.ssh/deploy_key ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} '
@@ -61,3 +60,5 @@ jobs:
             docker compose exec -T django python manage.py collectstatic --noinput
             echo "Deploy complete"
           '
+
+          
