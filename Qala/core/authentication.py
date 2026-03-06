@@ -4,18 +4,32 @@ from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from supertokens_python.recipe.session.syncio import get_session
 from supertokens_python.recipe.session.exceptions import (
-    UnauthorisedError,          # was: UnauthorisedException
-    TokenTheftError,            # was: TokenTheftDetectedException
-    TryRefreshTokenError,       # was: TryRefreshTokenException
+    UnauthorisedError,
+    TokenTheftError,
+    TryRefreshTokenError,
 )
 from .models import User
 
 logger = logging.getLogger('core')
 
+# These paths are fully public — skip SuperTokens validation entirely
+# so we don't pay the internal HTTP round-trip cost on every request
+PUBLIC_PATH_PREFIXES = (
+    '/api/discovery/images/',
+    '/api/discovery/readiness-check/',
+    '/api/discovery/recommendations/',
+    '/api/discovery/session/',
+    '/api/discovery/custom-inquiry/',
+)
+
 
 class SuperTokensAuthentication(BaseAuthentication):
 
     def authenticate(self, request):
+        # Fast-path: skip SuperTokens for fully public endpoints
+        if request.path.startswith(PUBLIC_PATH_PREFIXES):
+            return None
+
         try:
             session = get_session(request, session_required=False)
         except TryRefreshTokenError:
