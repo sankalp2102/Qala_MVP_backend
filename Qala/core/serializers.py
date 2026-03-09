@@ -65,7 +65,7 @@ class SellerAccountSerializer(serializers.ModelSerializer):
             'id', 'email', 'business_name', 'business_email',
             'is_verified', 'is_active', 'profiles', 'created_at',
         ]
-        read_only_fields = ['id', 'created_at', 'profiles', 'is_verified']
+        read_only_fields = ['id', 'created_at', 'profiles']
 
 
 class CreateSellerSerializer(serializers.Serializer):
@@ -92,6 +92,7 @@ class CreateSellerSerializer(serializers.Serializer):
             business_name  = validated_data['business_name'],
             business_email = validated_data.get('business_email', ''),
             created_by     = request.user,
+            is_verified    = True,  # admin-created sellers are pre-verified
         )
         SellerProfile.objects.create(
             seller_account = seller_account,
