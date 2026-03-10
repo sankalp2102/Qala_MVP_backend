@@ -2,7 +2,7 @@
 from rest_framework import serializers
 from seller_profile.models import StudioMedia
 from .models import (
-    BuyerProfile, StudioRecommendation,
+    BuyerProfile, StudioRecommendation, StudioInquiry,
     CraftInterest, BatchSize, Timeline, ExperimentationChoice,
 )
 
@@ -243,3 +243,249 @@ class BuyerProfileSummarySerializer(serializers.ModelSerializer):
             'created_at', 'updated_at',
         ]
         read_only_fields = fields  # summary is always read-only
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PUBLIC STUDIO PROFILE — buyer-facing read-only, no internal flags exposed
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PublicStudioProfileSerializer(serializers.Serializer):
+    """
+    Assembles all public data for a verified studio into a single flat response.
+    Called by GET /api/discovery/studios/<profile_id>/
+    """
+
+    studio_id          = serializers.SerializerMethodField()
+    studio_name        = serializers.SerializerMethodField()
+    location_city      = serializers.SerializerMethodField()
+    location_state     = serializers.SerializerMethodField()
+    years_in_operation = serializers.SerializerMethodField()
+    website_url        = serializers.SerializerMethodField()
+    instagram_url      = serializers.SerializerMethodField()
+    poc_working_style  = serializers.SerializerMethodField()
+
+    hero_image  = serializers.SerializerMethodField()
+    work_images = serializers.SerializerMethodField()
+    bts_images  = serializers.SerializerMethodField()
+
+    usps             = serializers.SerializerMethodField()
+    product_types    = serializers.SerializerMethodField()
+    crafts           = serializers.SerializerMethodField()
+    fabrics          = serializers.SerializerMethodField()
+    brands           = serializers.SerializerMethodField()
+    awards           = serializers.SerializerMethodField()
+    contacts         = serializers.SerializerMethodField()
+    production       = serializers.SerializerMethodField()
+    pre_call_questions = serializers.SerializerMethodField()
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    def _sd(self, profile):
+        """Safely return StudioDetails or None."""
+        try:
+            return profile.studio_details
+        except Exception:
+            return None
+
+    def _req(self):
+        return self.context.get('request')
+
+    def _media_url(self, media_obj):
+        req = self._req()
+        if media_obj.file and req:
+            return req.build_absolute_uri(media_obj.file.url)
+        return None
+
+    # ── fields ───────────────────────────────────────────────────────────────
+
+    def get_studio_id(self, profile):
+        return profile.id
+
+    def get_studio_name(self, profile):
+        sd = self._sd(profile)
+        return sd.studio_name if sd else None
+
+    def get_location_city(self, profile):
+        sd = self._sd(profile)
+        return sd.location_city if sd else None
+
+    def get_location_state(self, profile):
+        sd = self._sd(profile)
+        return sd.location_state if sd else None
+
+    def get_years_in_operation(self, profile):
+        sd = self._sd(profile)
+        return sd.years_in_operation if sd else None
+
+    def get_website_url(self, profile):
+        sd = self._sd(profile)
+        return sd.website_url if sd else None
+
+    def get_instagram_url(self, profile):
+        sd = self._sd(profile)
+        return sd.instagram_url if sd else None
+
+    def get_poc_working_style(self, profile):
+        sd = self._sd(profile)
+        return sd.poc_working_style if sd else None
+
+    def get_hero_image(self, profile):
+        sd = self._sd(profile)
+        if not sd:
+            return None
+        hero = sd.media_files.filter(
+            media_type=StudioMedia.MediaType.HERO
+        ).first()
+        if not hero:
+            return None
+        return {'url': self._media_url(hero), 'caption': hero.caption}
+
+    def get_work_images(self, profile):
+        sd = self._sd(profile)
+        if not sd:
+            return []
+        images = sd.media_files.filter(
+            media_type=StudioMedia.MediaType.WORK_DUMP
+        ).order_by('order')
+        return [
+            {'id': m.id, 'url': self._media_url(m), 'caption': m.caption}
+            for m in images
+        ]
+
+    def get_bts_images(self, profile):
+        try:
+            pr = profile.process_readiness
+        except Exception:
+            return []
+        return [
+            {'id': m.id, 'url': self._media_url(m), 'caption': m.caption}
+            for m in pr.bts_media.order_by('order')
+        ]
+
+    def get_usps(self, profile):
+        sd = self._sd(profile)
+        if not sd:
+            return []
+        return [u.strength for u in sd.usps.order_by('order')]
+
+    def get_product_types(self, profile):
+        """Return list of field names where value is True."""
+        try:
+            pt = profile.product_types
+        except Exception:
+            return []
+        boolean_fields = [
+            'dresses', 'tops', 'shirts', 't_shirts', 'tunics_kurtas',
+            'coord_sets', 'jumpsuits', 'skirts', 'shorts', 'trousers_pants',
+            'denim', 'blazers', 'coats_jackets', 'capes', 'waistcoats_vests',
+            'kaftans', 'resortwear_sets', 'loungewear_sleepwear', 'activewear',
+            'kidswear', 'accessories_scarves_stoles',
+        ]
+        return [f for f in boolean_fields if getattr(pt, f, False)]
+
+    def get_crafts(self, profile):
+        req = self._req()
+        result = []
+        for c in profile.crafts.all().order_by('-is_primary', 'order'):
+            result.append({
+                'id':                              c.id,
+                'craft_name':                      c.craft_name,
+                'is_primary':                      c.is_primary,
+                'specialization':                  c.specialization,
+                'innovation_level':                c.innovation_level,
+                'sampling_time_weeks':             c.sampling_time_weeks,
+                'production_timeline_months_50units': c.production_timeline_months_50units,
+                'limitations':                     c.limitations,
+                'delay_likelihood':                c.delay_likelihood,
+                'image_url': (
+                    req.build_absolute_uri(c.image.url)
+                    if c.image and req else None
+                ),
+            })
+        return result
+
+    def get_fabrics(self, profile):
+        fabrics = profile.fabric_answers.filter(works_with=True).order_by('category', 'fabric_name')
+        return [
+            {
+                'fabric_name': f.fabric_name,
+                'category':    f.category,
+                'is_primary':  f.is_primary,
+            }
+            for f in fabrics
+        ]
+
+    def get_brands(self, profile):
+        req = self._req()
+        result = []
+        for b in profile.brand_experiences.order_by('order'):
+            image_url = None
+            if b.image and req:
+                image_url = req.build_absolute_uri(b.image.url)
+            result.append({
+                'brand_name': b.brand_name,
+                'scope':      b.scope,
+                'image_url':  image_url,
+            })
+        return result
+
+    def get_awards(self, profile):
+        return [
+            {'award_name': a.award_name, 'link': a.link}
+            for a in profile.awards.order_by('order')
+        ]
+
+    def get_contacts(self, profile):
+        sd = self._sd(profile)
+        if not sd:
+            return []
+        return [
+            {
+                'name':  c.name,
+                'role':  c.role,
+                'email': c.email,
+                'phone': c.phone,
+            }
+            for c in sd.contacts.order_by('order')
+        ]
+
+    def get_production(self, profile):
+        try:
+            ps = profile.production_scale
+        except Exception:
+            return None
+        return {
+            'monthly_capacity_units': ps.monthly_capacity_units,
+            'has_strict_minimums':    ps.has_strict_minimums,
+            'moq_entries': [
+                {
+                    'craft_or_category': m.craft_or_category,
+                    'moq_condition':     m.moq_condition,
+                }
+                for m in ps.moq_entries.order_by('order')
+            ],
+        }
+
+    def get_pre_call_questions(self, profile):
+        try:
+            collab = profile.collab_design
+        except Exception:
+            return []
+        return [
+            {'order': r.order, 'question': r.question}
+            for r in collab.buyer_requirements.order_by('order')
+        ]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STUDIO INQUIRY — buyer submits enquiry from the studio profile page
+# ─────────────────────────────────────────────────────────────────────────────
+
+class StudioInquirySerializer(serializers.Serializer):
+    name          = serializers.CharField(max_length=200)
+    email         = serializers.EmailField()
+    answers       = serializers.ListField(
+        child=serializers.DictField(child=serializers.CharField(allow_blank=True)),
+        required=False,
+        default=list,
+    )
+    session_token = serializers.UUIDField(required=False, allow_null=True)

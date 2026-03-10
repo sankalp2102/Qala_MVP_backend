@@ -218,3 +218,40 @@ class CustomInquiry(models.Model):
 
     def __str__(self):
         return f'Inquiry from {self.name} <{self.email}>'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STUDIO INQUIRY
+# Buyer submits an inquiry directly from a studio profile page.
+# Tied to a specific studio (seller_profile) unlike the generic CustomInquiry.
+# answers stores [{question, answer}] pairs — dynamic per studio's BuyerRequirements.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class StudioInquiry(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    seller_profile = models.ForeignKey(
+        SellerProfile, on_delete=models.CASCADE, related_name='studio_inquiries',
+    )
+    buyer_profile = models.ForeignKey(
+        BuyerProfile, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='studio_inquiries',
+    )
+
+    name    = models.CharField(max_length=200)
+    email   = models.EmailField()
+    # [{question: '...', answer: '...'}] — mirrors BuyerRequirement questions
+    answers = models.JSONField(default=list, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'studio_inquiries'
+        ordering = ['-created_at']
+        indexes  = [
+            models.Index(fields=['seller_profile']),
+            models.Index(fields=['email']),
+        ]
+
+    def __str__(self):
+        return f'StudioInquiry from {self.name} <{self.email}> → {self.seller_profile}'

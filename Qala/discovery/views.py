@@ -620,3 +620,78 @@ class AdminDiscoveryInquiryListView(APIView):
             })
 
         return Response({'status': 'ok', 'count': len(data), 'inquiries': data})
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PUBLIC STUDIO PROFILE
+# GET /api/discovery/studios/<profile_id>/
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PublicStudioProfileView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, profile_id):
+        from django.shortcuts import get_object_or_404
+        from .serializers import PublicStudioProfileSerializer
+
+        # Only serve verified + active studios
+        profile = get_object_or_404(
+            SellerProfile,
+            id=profile_id,
+            is_active=True,
+            seller_account__is_verified=True,
+        )
+
+        serializer = PublicStudioProfileSerializer(
+            profile, context={'request': request}
+        )
+        return Response(serializer.data)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STUDIO INQUIRY SUBMIT
+# POST /api/discovery/studios/<profile_id>/inquire/
+# ─────────────────────────────────────────────────────────────────────────────
+
+class StudioInquiryView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, profile_id):
+        from django.shortcuts import get_object_or_404
+        from .serializers import StudioInquirySerializer
+        from .models import StudioInquiry
+
+        profile = get_object_or_404(
+            SellerProfile,
+            id=profile_id,
+            is_active=True,
+            seller_account__is_verified=True,
+        )
+
+        serializer = StudioInquirySerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {'status': 'error', 'errors': serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        data          = serializer.validated_data
+        session_token = data.get('session_token')
+
+        # Link to BuyerProfile if session_token matches
+        buyer_profile = None
+        if session_token:
+            try:
+                buyer_profile = BuyerProfile.objects.get(session_token=session_token)
+            except BuyerProfile.DoesNotExist:
+                pass  # anonymous inquiry — that's fine
+
+        StudioInquiry.objects.create(
+            seller_profile=profile,
+            buyer_profile=buyer_profile,
+            name=data['name'],
+            email=data['email'],
+            answers=data.get('answers', []),
+        )
+
+        return Response({'status': 'ok'}, status=status.HTTP_201_CREATED)
+    

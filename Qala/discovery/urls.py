@@ -8,6 +8,8 @@ from .views import (
     SessionResumeView,
     LinkSessionView,
     CustomInquiryView,
+    PublicStudioProfileView,
+    StudioInquiryView,
     AdminDiscoveryBuyerListView,
     AdminDiscoveryBuyerDetailView,
     AdminDiscoveryInquiryListView,
@@ -31,13 +33,16 @@ urlpatterns = [
 
     # Link anonymous session to a logged-in user account (called after register/login)
     path('discovery/link-session/',         LinkSessionView.as_view()),
-    
+
     # Custom inquiry form submission
     path('discovery/custom-inquiry/',       CustomInquiryView.as_view()),
-    
+
+    # Feature 4 — Public studio profile + inquiry
+    path('discovery/studios/<int:profile_id>/',          PublicStudioProfileView.as_view()),
+    path('discovery/studios/<int:profile_id>/inquire/',  StudioInquiryView.as_view()),
+
     # Admin
     path('admin/discovery/buyers/',              AdminDiscoveryBuyerListView.as_view()),
     path('admin/discovery/buyers/<uuid:buyer_id>/', AdminDiscoveryBuyerDetailView.as_view()),
     path('admin/discovery/inquiries/',           AdminDiscoveryInquiryListView.as_view()),
-
 ]
