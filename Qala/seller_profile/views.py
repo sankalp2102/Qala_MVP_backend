@@ -703,32 +703,32 @@ class AdminSellerProfileListView(APIView):
         data = []
         for p in profiles:
             try:
-                # BUG 5 FIX: renamed 'os' → 'onboarding_status'
                 onboarding_status = p.onboarding_status
-                completion        = onboarding_status.completion_percentage
                 section_statuses  = {
-                    'A': onboarding_status.section_a_status,
-                    'B': onboarding_status.section_b_status,
-                    'C': onboarding_status.section_c_status,
-                    'D': onboarding_status.section_d_status,
-                    'E': onboarding_status.section_e_status,
-                    'F': onboarding_status.section_f_status,
+                    'section_a_status': onboarding_status.section_a_status,
+                    'section_b_status': onboarding_status.section_b_status,
+                    'section_c_status': onboarding_status.section_c_status,
+                    'section_d_status': onboarding_status.section_d_status,
+                    'section_e_status': onboarding_status.section_e_status,
+                    'section_f_status': onboarding_status.section_f_status,
                 }
-                flagged_sections = [k for k, v in section_statuses.items() if v == SectionStatus.FLAGGED]
+                completion_percentage = onboarding_status.completion_percentage
+                flagged_sections      = [k for k, v in section_statuses.items() if v == SectionStatus.FLAGGED]
             except OnboardingStatus.DoesNotExist:
-                completion       = 0.0
-                section_statuses = {}
-                flagged_sections = []
+                completion_percentage = 0.0
+                section_statuses      = {}
+                flagged_sections      = []
 
             data.append({
-                'profile_id':       p.id,
-                'profile_name':     p.profile_name,
-                'business_name':    p.seller_account.business_name,
-                'seller_email':     p.seller_account.user.email,
-                'completion':       completion,
-                'section_statuses': section_statuses,
-                'flagged_sections': flagged_sections,
-                'is_verified':      p.seller_account.is_verified,
+                'profile_id':          p.id,
+                'profile_name':        p.profile_name,
+                'business_name':       p.seller_account.business_name,
+                'email':               p.seller_account.user.email,
+                'seller_email':        p.seller_account.user.email,
+                'completion_percentage': completion_percentage,
+                'section_statuses':    section_statuses,
+                'flagged_sections':    flagged_sections,
+                'is_verified':         p.seller_account.is_verified,
             })
 
         return Response(data)
