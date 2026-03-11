@@ -86,6 +86,9 @@ CORS_ALLOW_HEADERS = [
     'fdi-version',
     'anti-csrf',
     'st-auth-mode',
+    'st-refresh-token',
+    'st-access-token',
+    'front-token',
 ]
 CORS_EXPOSE_HEADERS = ['front-token', 'st-access-token', 'st-refresh-token']
 

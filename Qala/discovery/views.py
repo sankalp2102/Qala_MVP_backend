@@ -511,15 +511,25 @@ class AdminStudioInquiryListView(APIView):
             return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
 
         from .models import StudioInquiry
-        inquiries = StudioInquiry.objects.select_related('seller_profile', 'buyer_profile').order_by('-created_at')
+        inquiries = StudioInquiry.objects.select_related(
+            'seller_profile',
+            'seller_profile__studio_details',
+            'seller_profile__seller_account',
+            'buyer_profile',
+        ).order_by('-created_at')
         data = []
         for inq in inquiries:
-            s    = inq.seller_profile
-            row  = _studio_inquiry_data(inq)
+            s = inq.seller_profile
+            # Safely resolve studio name: studio_details → business_name → profile_name
             try:
-                studio_name = s.studio_details.studio_name or s.seller_account.business_name
+                studio_name = (
+                    getattr(s.studio_details, 'studio_name', None)
+                    or s.seller_account.business_name
+                    or s.profile_name
+                )
             except Exception:
                 studio_name = s.profile_name
+            row = _studio_inquiry_data(inq)
             row['studio'] = {'id': s.id, 'name': studio_name}
             data.append(row)
         return Response({'status': 'ok', 'count': len(data), 'inquiries': data})
