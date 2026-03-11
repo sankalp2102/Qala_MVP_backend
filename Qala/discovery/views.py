@@ -516,7 +516,11 @@ class AdminStudioInquiryListView(APIView):
         for inq in inquiries:
             s    = inq.seller_profile
             row  = _studio_inquiry_data(inq)
-            row['studio'] = {'id': s.id, 'name': s.studio_name}
+            try:
+                studio_name = s.studio_details.studio_name or s.seller_account.business_name
+            except Exception:
+                studio_name = s.profile_name
+            row['studio'] = {'id': s.id, 'name': studio_name}
             data.append(row)
         return Response({'status': 'ok', 'count': len(data), 'inquiries': data})
 
