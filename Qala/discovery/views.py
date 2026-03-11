@@ -36,21 +36,14 @@ def _derive_journey_stage(process_stage: str) -> str:
 
 
 def _build_buyer_summary(buyer: BuyerProfile) -> dict:
-    """
-    Short summary for the context strip on the recommendations page.
-    e.g. "Dresses, Tops • Hand block printing • 30-100 pieces"
-    """
     parts = []
-
     if buyer.product_types:
         labels = [t.replace('_', ' ').title() for t in buyer.product_types[:3]]
         if len(buyer.product_types) > 3:
             labels.append(f'+{len(buyer.product_types) - 3} more')
         parts.append(', '.join(labels))
-
     if buyer.crafts and not buyer.craft_not_sure:
         parts.append(', '.join(buyer.crafts[:3]))
-
     if buyer.batch_size and buyer.batch_size != 'not_sure':
         label = {
             'under_30': 'Under 30 pieces',
@@ -59,7 +52,6 @@ def _build_buyer_summary(buyer: BuyerProfile) -> dict:
         }.get(buyer.batch_size, '')
         if label:
             parts.append(label)
-
     return {
         'display':       ' • '.join(parts),
         'product_types': buyer.product_types,
@@ -71,21 +63,16 @@ def _build_buyer_summary(buyer: BuyerProfile) -> dict:
 
 
 def _recommendations_response(buyer: BuyerProfile, request) -> dict:
-    """Build the standard recommendations response dict."""
     context = {'request': request}
-
     recs = StudioRecommendation.objects.filter(
         buyer_profile=buyer, is_bonus_visual=False
     ).select_related('seller_profile').order_by('rank_position')
-
     bonus = StudioRecommendation.objects.filter(
         buyer_profile=buyer, is_bonus_visual=True
     ).select_related('seller_profile')
-
     total = SellerProfile.objects.filter(
         is_active=True, seller_account__is_verified=True
     ).count()
-
     return {
         'status':                  'ok',
         'buyer_profile_id':        str(buyer.id),
@@ -101,10 +88,28 @@ def _recommendations_response(buyer: BuyerProfile, request) -> dict:
     }
 
 
+def _studio_inquiry_data(inq) -> dict:
+    """Shared serialiser for StudioInquiry — used by both admin and seller views."""
+    b = inq.buyer_profile
+    return {
+        'id':         str(inq.id),
+        'name':       inq.name,
+        'email':      inq.email,
+        'answers':    inq.answers,
+        'created_at': inq.created_at.isoformat(),
+        'buyer': {
+            'id':            str(b.id),
+            'journey_stage': b.journey_stage,
+            'product_types': b.product_types or [],
+            'crafts':        b.crafts or [],
+            'batch_size':    b.batch_size,
+            'timeline':      b.timeline,
+        } if b else None,
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # GET /api/discovery/images/
-# Returns all work_dump images for Q1 visual selection grid
-# Public — no auth required
 # ─────────────────────────────────────────────────────────────────────────────
 
 class VisualGridImagesView(APIView):
@@ -115,20 +120,13 @@ class VisualGridImagesView(APIView):
             media_type=StudioMedia.MediaType.WORK_DUMP,
             studio__seller_profile__is_active=True,
             studio__seller_profile__seller_account__is_verified=True,
-        ).select_related('studio').order_by('?')  # randomised
-
+        ).select_related('studio').order_by('?')
         serializer = VisualGridImageSerializer(images, many=True, context={'request': request})
-        return Response({
-            'status': 'ok',
-            'count':  images.count(),
-            'images': serializer.data,
-        })
+        return Response({'status': 'ok', 'count': images.count(), 'images': serializer.data})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # POST /api/discovery/readiness-check/
-# Submit questionnaire answers -> run matching -> return recommendations
-# Public — no auth required
 # ─────────────────────────────────────────────────────────────────────────────
 
 class ReadinessCheckView(APIView):
@@ -138,14 +136,9 @@ class ReadinessCheckView(APIView):
     def post(self, request):
         serializer = ReadinessCheckSerializer(data=request.data)
         if not serializer.is_valid():
-            return Response(
-                {'status': 'error', 'errors': serializer.errors},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({'status': 'error', 'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
-        data = serializer.validated_data
-
-        # Resume existing session if token provided
+        data          = serializer.validated_data
         buyer         = None
         session_token = data.get('session_token')
 
@@ -159,25 +152,24 @@ class ReadinessCheckView(APIView):
         if buyer is None:
             buyer = BuyerProfile()
 
-        # Write all questionnaire answers onto the buyer profile
-        buyer.first_name           = data.get('first_name', '')
-        buyer.last_name            = data.get('last_name', '')
-        buyer.visual_selection_ids = data.get('visual_selection_ids', [])
-        buyer.product_types        = data.get('product_types', [])
-        buyer.fabrics              = data.get('fabrics', [])
-        buyer.fabric_is_flexible   = data.get('fabric_is_flexible', False)
-        buyer.fabric_not_sure      = data.get('fabric_not_sure', False)
-        buyer.craft_interest       = data.get('craft_interest')
-        buyer.crafts               = data.get('crafts', [])
-        buyer.craft_is_flexible    = data.get('craft_is_flexible', False)
-        buyer.craft_not_sure       = data.get('craft_not_sure', False)
-        buyer.experimentation      = data.get('experimentation', 'skipped')
-        buyer.process_stage        = data.get('process_stage', '')
-        buyer.design_support       = data.get('design_support', [])
-        buyer.timeline             = data.get('timeline')
-        buyer.batch_size           = data.get('batch_size')
-        buyer.journey_stage        = _derive_journey_stage(data.get('process_stage', ''))
-        buyer.matching_complete    = False
+        buyer.first_name             = data.get('first_name', '')
+        buyer.last_name              = data.get('last_name', '')
+        buyer.visual_selection_ids   = data.get('visual_selection_ids', [])
+        buyer.product_types          = data.get('product_types', [])
+        buyer.fabrics                = data.get('fabrics', [])
+        buyer.fabric_is_flexible     = data.get('fabric_is_flexible', False)
+        buyer.fabric_not_sure        = data.get('fabric_not_sure', False)
+        buyer.craft_interest         = data.get('craft_interest')
+        buyer.crafts                 = data.get('crafts', [])
+        buyer.craft_is_flexible      = data.get('craft_is_flexible', False)
+        buyer.craft_not_sure         = data.get('craft_not_sure', False)
+        buyer.experimentation        = data.get('experimentation', 'skipped')
+        buyer.process_stage          = data.get('process_stage', '')
+        buyer.design_support         = data.get('design_support', [])
+        buyer.timeline               = data.get('timeline')
+        buyer.batch_size             = data.get('batch_size')
+        buyer.journey_stage          = _derive_journey_stage(data.get('process_stage', ''))
+        buyer.matching_complete      = False
         buyer.zero_match_suggestions = []
         buyer.save()
 
@@ -185,21 +177,13 @@ class ReadinessCheckView(APIView):
             run_matching(buyer)
         except Exception as e:
             logger.error(f'Matching failed for buyer {buyer.id}: {e}', exc_info=True)
-            return Response(
-                {'status': 'error', 'message': 'Matching failed. Please try again.'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            return Response({'status': 'error', 'message': 'Matching failed. Please try again.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        return Response(
-            _recommendations_response(buyer, request),
-            status=status.HTTP_201_CREATED,
-        )
+        return Response(_recommendations_response(buyer, request), status=status.HTTP_201_CREATED)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GET /api/discovery/recommendations/?session_token=<uuid>
-# Re-fetch saved recommendations (page refresh, back navigation)
-# Public — no auth required
+# GET /api/discovery/recommendations/
 # ─────────────────────────────────────────────────────────────────────────────
 
 class RecommendationsView(APIView):
@@ -208,32 +192,18 @@ class RecommendationsView(APIView):
     def get(self, request):
         session_token = request.query_params.get('session_token')
         if not session_token:
-            return Response(
-                {'status': 'error', 'message': 'session_token is required'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
+            return Response({'status': 'error', 'message': 'session_token is required'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             buyer = BuyerProfile.objects.get(session_token=session_token)
         except BuyerProfile.DoesNotExist:
-            return Response(
-                {'status': 'not_found', 'message': 'Session not found'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
+            return Response({'status': 'not_found', 'message': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
         if not buyer.matching_complete:
-            return Response(
-                {'status': 'pending', 'message': 'Matching not yet complete'},
-                status=status.HTTP_202_ACCEPTED,
-            )
-
+            return Response({'status': 'pending', 'message': 'Matching not yet complete'}, status=status.HTTP_202_ACCEPTED)
         return Response(_recommendations_response(buyer, request))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # POST /api/discovery/recommendations/edit/
-# Edit answers -> re-run matching (used by context strip "Edit" button)
-# Public — no auth required
 # ─────────────────────────────────────────────────────────────────────────────
 
 class EditRecommendationsView(APIView):
@@ -243,66 +213,46 @@ class EditRecommendationsView(APIView):
     def post(self, request):
         session_token = request.data.get('session_token')
         if not session_token:
-            return Response(
-                {'status': 'error', 'message': 'session_token is required'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
+            return Response({'status': 'error', 'message': 'session_token is required'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             buyer = BuyerProfile.objects.get(session_token=session_token)
         except BuyerProfile.DoesNotExist:
-            return Response(
-                {'status': 'not_found', 'message': 'Session not found'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return Response({'status': 'not_found', 'message': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        # ── Handle suggestion patch (zero match relaxation) ──────────────────
         apply_patch = request.data.get('apply_suggestion')
         if apply_patch:
-            # apply_patch is a dict of field overrides e.g. {'craft_is_flexible': True}
             for field, value in apply_patch.items():
                 if hasattr(buyer, field):
                     setattr(buyer, field, value)
             buyer.matching_complete      = False
             buyer.zero_match_suggestions = []
             buyer.save()
-
             try:
                 run_matching(buyer)
             except Exception as e:
                 logger.error(f'Suggestion matching failed for buyer {buyer.id}: {e}', exc_info=True)
-                return Response(
-                    {'status': 'error', 'message': 'Matching failed. Please try again.'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-
+                return Response({'status': 'error', 'message': 'Matching failed. Please try again.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             return Response(_recommendations_response(buyer, request))
 
-        # ── Handle full questionnaire edit ────────────────────────────────────
         serializer = ReadinessCheckSerializer(data=request.data)
         if not serializer.is_valid():
-            return Response(
-                {'status': 'error', 'errors': serializer.errors},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({'status': 'error', 'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
         data = serializer.validated_data
-        buyer.product_types        = data.get('product_types',        buyer.product_types)
-        buyer.fabrics              = data.get('fabrics',              buyer.fabrics)
-        buyer.fabric_is_flexible   = data.get('fabric_is_flexible',   buyer.fabric_is_flexible)
-        buyer.fabric_not_sure      = data.get('fabric_not_sure',      buyer.fabric_not_sure)
-        buyer.craft_interest       = data.get('craft_interest',       buyer.craft_interest)
-        buyer.crafts               = data.get('crafts',               buyer.crafts)
-        buyer.craft_is_flexible    = data.get('craft_is_flexible',    buyer.craft_is_flexible)
-        buyer.craft_not_sure       = data.get('craft_not_sure',       buyer.craft_not_sure)
-        buyer.experimentation      = data.get('experimentation',      buyer.experimentation)
-        buyer.process_stage        = data.get('process_stage',        buyer.process_stage)
-        buyer.design_support       = data.get('design_support',       buyer.design_support)
-        buyer.timeline             = data.get('timeline',             buyer.timeline)
-        buyer.batch_size           = data.get('batch_size',           buyer.batch_size)
-        buyer.journey_stage        = _derive_journey_stage(
-            data.get('process_stage', buyer.process_stage or '')
-        )
+        buyer.product_types          = data.get('product_types',      buyer.product_types)
+        buyer.fabrics                = data.get('fabrics',            buyer.fabrics)
+        buyer.fabric_is_flexible     = data.get('fabric_is_flexible', buyer.fabric_is_flexible)
+        buyer.fabric_not_sure        = data.get('fabric_not_sure',    buyer.fabric_not_sure)
+        buyer.craft_interest         = data.get('craft_interest',     buyer.craft_interest)
+        buyer.crafts                 = data.get('crafts',             buyer.crafts)
+        buyer.craft_is_flexible      = data.get('craft_is_flexible',  buyer.craft_is_flexible)
+        buyer.craft_not_sure         = data.get('craft_not_sure',     buyer.craft_not_sure)
+        buyer.experimentation        = data.get('experimentation',    buyer.experimentation)
+        buyer.process_stage          = data.get('process_stage',      buyer.process_stage)
+        buyer.design_support         = data.get('design_support',     buyer.design_support)
+        buyer.timeline               = data.get('timeline',           buyer.timeline)
+        buyer.batch_size             = data.get('batch_size',         buyer.batch_size)
+        buyer.journey_stage          = _derive_journey_stage(data.get('process_stage', buyer.process_stage or ''))
         buyer.matching_complete      = False
         buyer.zero_match_suggestions = []
         buyer.save()
@@ -311,18 +261,13 @@ class EditRecommendationsView(APIView):
             run_matching(buyer)
         except Exception as e:
             logger.error(f'Re-matching failed for buyer {buyer.id}: {e}', exc_info=True)
-            return Response(
-                {'status': 'error', 'message': 'Matching failed. Please try again.'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            return Response({'status': 'error', 'message': 'Matching failed. Please try again.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response(_recommendations_response(buyer, request))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GET /api/discovery/session/?session_token=<uuid>
-# Returns saved questionnaire answers so frontend can restore progress on load
-# Public — no auth required
+# GET /api/discovery/session/
 # ─────────────────────────────────────────────────────────────────────────────
 
 class SessionResumeView(APIView):
@@ -331,30 +276,16 @@ class SessionResumeView(APIView):
     def get(self, request):
         session_token = request.query_params.get('session_token')
         if not session_token:
-            return Response(
-                {'status': 'error', 'message': 'session_token is required'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
+            return Response({'status': 'error', 'message': 'session_token is required'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             buyer = BuyerProfile.objects.get(session_token=session_token)
         except BuyerProfile.DoesNotExist:
-            return Response(
-                {'status': 'not_found', 'message': 'No saved session found'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        return Response({
-            'status': 'ok',
-            'data':   BuyerProfileSummarySerializer(buyer).data,
-        })
+            return Response({'status': 'not_found', 'message': 'No saved session found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'status': 'ok', 'data': BuyerProfileSummarySerializer(buyer).data})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # POST /api/discovery/link-session/
-# Called after buyer logs in / registers — links their anonymous BuyerProfile
-# to their new User account. session_token comes from localStorage.
-# Auth required — buyer must be logged in at this point.
 # ─────────────────────────────────────────────────────────────────────────────
 
 class LinkSessionView(APIView):
@@ -364,40 +295,19 @@ class LinkSessionView(APIView):
     def post(self, request):
         session_token = request.data.get('session_token')
         if not session_token:
-            return Response(
-                {'status': 'error', 'message': 'session_token is required'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
+            return Response({'status': 'error', 'message': 'session_token is required'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             buyer = BuyerProfile.objects.get(session_token=session_token)
         except BuyerProfile.DoesNotExist:
-            return Response(
-                {'status': 'not_found', 'message': 'Session not found'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        # Link to this user — only if not already linked to someone else
+            return Response({'status': 'not_found', 'message': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
         if buyer.user is not None and buyer.user != request.user:
-            return Response(
-                {'status': 'error', 'message': 'This session belongs to another account'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
+            return Response({'status': 'error', 'message': 'This session belongs to another account'}, status=status.HTTP_403_FORBIDDEN)
         buyer.user = request.user
         buyer.save(update_fields=['user'])
+        logger.info(f'Linked BuyerProfile {buyer.id} to user {request.user.id}')
+        return Response({'status': 'ok', 'buyer_profile_id': str(buyer.id), 'session_token': str(buyer.session_token), 'message': 'Session linked to your account'})
 
-        logger.info(
-            f'Linked BuyerProfile {buyer.id} to user {request.user.id}'
-        )
 
-        return Response({
-            'status':          'ok',
-            'buyer_profile_id': str(buyer.id),
-            'session_token':    str(buyer.session_token),
-            'message':         'Session linked to your account',
-        })
-        
 # ─────────────────────────────────────────────────────────────────────────────
 # CUSTOM INQUIRY
 # ─────────────────────────────────────────────────────────────────────────────
@@ -412,10 +322,7 @@ class CustomInquiryView(APIView):
         session_token = (request.data.get('session_token') or '').strip()
 
         if not name or not email or not message:
-            return Response(
-                {'error': 'name, email and message are required.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({'error': 'name, email and message are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         buyer_profile = None
         if session_token:
@@ -424,19 +331,12 @@ class CustomInquiryView(APIView):
             except (BuyerProfile.DoesNotExist, Exception):
                 pass
 
-
-        CustomInquiry.objects.create(
-            name=name,
-            email=email,
-            message=message,
-            buyer_profile=buyer_profile,
-        )
-
+        CustomInquiry.objects.create(name=name, email=email, message=message, buyer_profile=buyer_profile)
         return Response({'status': 'ok'}, status=status.HTTP_201_CREATED)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ADMIN — DISCOVERY
+# ADMIN — DISCOVERY BUYERS
 # ─────────────────────────────────────────────────────────────────────────────
 
 class AdminDiscoveryBuyerListView(APIView):
@@ -446,11 +346,7 @@ class AdminDiscoveryBuyerListView(APIView):
         if not request.user.is_staff and getattr(request.user, 'role', None) != 'admin':
             return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
 
-
-        buyers = BuyerProfile.objects.prefetch_related(
-            'recommendations'
-        ).order_by('-created_at')
-
+        buyers = BuyerProfile.objects.prefetch_related('recommendations').order_by('-created_at')
         data = []
         for b in buyers:
             rec_count   = b.recommendations.filter(is_bonus_visual=False).count()
@@ -475,20 +371,17 @@ class AdminDiscoveryBuyerListView(APIView):
                 'created_at':        b.created_at.isoformat(),
             })
 
-        # Summary stats
         total        = len(data)
         zero_match   = sum(1 for d in data if d['zero_match'])
         has_match    = sum(1 for d in data if d['rec_count'] > 0)
         linked_users = sum(1 for d in data if d['user_email'])
 
-        # Top crafts
         from collections import Counter
         all_crafts = []
         for d in data:
             all_crafts.extend(d['crafts'] or [])
         top_crafts = [{'craft': k, 'count': v} for k, v in Counter(all_crafts).most_common(8)]
 
-        # Top products
         all_products = []
         for d in data:
             all_products.extend(d['product_types'] or [])
@@ -496,12 +389,7 @@ class AdminDiscoveryBuyerListView(APIView):
 
         return Response({
             'status': 'ok',
-            'stats': {
-                'total':        total,
-                'has_match':    has_match,
-                'zero_match':   zero_match,
-                'linked_users': linked_users,
-            },
+            'stats': {'total': total, 'has_match': has_match, 'zero_match': zero_match, 'linked_users': linked_users},
             'top_crafts':   top_crafts,
             'top_products': top_products,
             'buyers':       data,
@@ -516,72 +404,64 @@ class AdminDiscoveryBuyerDetailView(APIView):
             return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
 
         try:
-            buyer = BuyerProfile.objects.prefetch_related(
-                'recommendations__seller_profile__studio_details',
-            ).get(id=buyer_id)
+            buyer = BuyerProfile.objects.prefetch_related('recommendations__seller_profile__studio_details').get(id=buyer_id)
         except BuyerProfile.DoesNotExist:
             return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
 
         recs = []
         for r in buyer.recommendations.filter(is_bonus_visual=False).order_by('rank_position'):
             try:
-                sd = r.seller_profile.studio_details
+                sd          = r.seller_profile.studio_details
                 studio_name = sd.studio_name if sd else None
-                location = ', '.join(filter(None, [sd.location_city, sd.location_state])) if sd else None
+                location    = ', '.join(filter(None, [sd.location_city, sd.location_state])) if sd else None
             except Exception:
                 studio_name = None
-                location = None
+                location    = None
             recs.append({
-                'rank_position': r.rank_position,
-                'ranking':       r.ranking,
-                'studio_id':     r.seller_profile.id,
-                'studio_name':   studio_name,
-                'location':      location,
-                'core_capability_fit': r.core_capability_fit,
-                'moq_fit':            r.moq_fit,
-                'craft_approach_fit': r.craft_approach_fit,
-                'visual_affinity':    r.visual_affinity,
-                'match_reasoning':    r.match_reasoning,
-                'what_best_at':       r.what_best_at,
+                'rank_position':        r.rank_position,
+                'ranking':              r.ranking,
+                'studio_id':            r.seller_profile.id,
+                'studio_name':          studio_name,
+                'location':             location,
+                'core_capability_fit':  r.core_capability_fit,
+                'moq_fit':              r.moq_fit,
+                'craft_approach_fit':   r.craft_approach_fit,
+                'visual_affinity':      r.visual_affinity,
+                'match_reasoning':      r.match_reasoning,
+                'what_best_at':         r.what_best_at,
                 'what_to_keep_in_mind': r.what_to_keep_in_mind,
             })
 
         from .models import CustomInquiry
         inquiries = []
         for inq in CustomInquiry.objects.filter(buyer_profile=buyer).order_by('-created_at'):
-            inquiries.append({
-                'id':         str(inq.id),
-                'name':       inq.name,
-                'email':      inq.email,
-                'message':    inq.message,
-                'created_at': inq.created_at.isoformat(),
-            })
+            inquiries.append({'id': str(inq.id), 'name': inq.name, 'email': inq.email, 'message': inq.message, 'created_at': inq.created_at.isoformat()})
 
         return Response({
             'status': 'ok',
             'buyer': {
-                'id':             str(buyer.id),
-                'session_token':  str(buyer.session_token),
-                'name':           f'{buyer.first_name or ""} {buyer.last_name or ""}'.strip() or None,
-                'user_email':     buyer.user.email if buyer.user else None,
-                'journey_stage':  buyer.journey_stage,
-                'product_types':  buyer.product_types,
-                'fabrics':        buyer.fabrics,
-                'fabric_is_flexible': buyer.fabric_is_flexible,
-                'fabric_not_sure':    buyer.fabric_not_sure,
-                'craft_interest': buyer.craft_interest,
-                'crafts':         buyer.crafts,
-                'craft_is_flexible': buyer.craft_is_flexible,
-                'craft_not_sure':    buyer.craft_not_sure,
-                'experimentation':   buyer.experimentation,
-                'process_stage':     buyer.process_stage,
-                'design_support':    buyer.design_support,
-                'timeline':          buyer.timeline,
-                'batch_size':        buyer.batch_size,
-                'matching_complete': buyer.matching_complete,
+                'id':                     str(buyer.id),
+                'session_token':          str(buyer.session_token),
+                'name':                   f'{buyer.first_name or ""} {buyer.last_name or ""}'.strip() or None,
+                'user_email':             buyer.user.email if buyer.user else None,
+                'journey_stage':          buyer.journey_stage,
+                'product_types':          buyer.product_types,
+                'fabrics':                buyer.fabrics,
+                'fabric_is_flexible':     buyer.fabric_is_flexible,
+                'fabric_not_sure':        buyer.fabric_not_sure,
+                'craft_interest':         buyer.craft_interest,
+                'crafts':                 buyer.crafts,
+                'craft_is_flexible':      buyer.craft_is_flexible,
+                'craft_not_sure':         buyer.craft_not_sure,
+                'experimentation':        buyer.experimentation,
+                'process_stage':          buyer.process_stage,
+                'design_support':         buyer.design_support,
+                'timeline':               buyer.timeline,
+                'batch_size':             buyer.batch_size,
+                'matching_complete':      buyer.matching_complete,
                 'zero_match_suggestions': buyer.zero_match_suggestions,
-                'created_at':        buyer.created_at.isoformat(),
-                'updated_at':        buyer.updated_at.isoformat(),
+                'created_at':             buyer.created_at.isoformat(),
+                'updated_at':             buyer.updated_at.isoformat(),
             },
             'recommendations': recs,
             'inquiries':       inquiries,
@@ -596,10 +476,7 @@ class AdminDiscoveryInquiryListView(APIView):
             return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
 
         from .models import CustomInquiry
-        inquiries = CustomInquiry.objects.select_related(
-            'buyer_profile'
-        ).order_by('-created_at')
-
+        inquiries = CustomInquiry.objects.select_related('buyer_profile').order_by('-created_at')
         data = []
         for inq in inquiries:
             b = inq.buyer_profile
@@ -610,16 +487,75 @@ class AdminDiscoveryInquiryListView(APIView):
                 'message':    inq.message,
                 'created_at': inq.created_at.isoformat(),
                 'buyer': {
-                    'id':            str(b.id) if b else None,
-                    'journey_stage': b.journey_stage if b else None,
-                    'product_types': b.product_types if b else [],
-                    'crafts':        b.crafts if b else [],
-                    'batch_size':    b.batch_size if b else None,
-                    'timeline':      b.timeline if b else None,
+                    'id':            str(b.id),
+                    'journey_stage': b.journey_stage,
+                    'product_types': b.product_types or [],
+                    'crafts':        b.crafts or [],
+                    'batch_size':    b.batch_size,
+                    'timeline':      b.timeline,
                 } if b else None,
             })
-
         return Response({'status': 'ok', 'count': len(data), 'inquiries': data})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADMIN — ALL STUDIO INQUIRIES
+# GET /api/admin/discovery/studio-inquiries/
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AdminStudioInquiryListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_staff and getattr(request.user, 'role', None) != 'admin':
+            return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        from .models import StudioInquiry
+        inquiries = StudioInquiry.objects.select_related('seller_profile', 'buyer_profile').order_by('-created_at')
+        data = []
+        for inq in inquiries:
+            s    = inq.seller_profile
+            row  = _studio_inquiry_data(inq)
+            row['studio'] = {'id': s.id, 'name': s.studio_name}
+            data.append(row)
+        return Response({'status': 'ok', 'count': len(data), 'inquiries': data})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SELLER — OWN STUDIO INQUIRIES
+# GET /api/seller/studio-inquiries/
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SellerStudioInquiryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .models import StudioInquiry
+
+        try:
+            account = request.user.seller_account
+        except Exception:
+            return Response({'error': 'No seller account found'}, status=status.HTTP_403_FORBIDDEN)
+
+        profile_id = request.headers.get('X-Profile-Id')
+        if profile_id:
+            profile = account.profiles.filter(id=profile_id, is_active=True).first()
+        else:
+            profile = (
+                account.profiles.filter(is_default=True, is_active=True).first()
+                or account.profiles.filter(is_active=True).first()
+            )
+
+        if not profile:
+            return Response({'error': 'No active profile found'}, status=status.HTTP_404_NOT_FOUND)
+
+        inquiries = StudioInquiry.objects.filter(
+            seller_profile=profile
+        ).select_related('buyer_profile').order_by('-created_at')
+
+        data = [_studio_inquiry_data(inq) for inq in inquiries]
+        return Response({'status': 'ok', 'count': len(data), 'inquiries': data})
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PUBLIC STUDIO PROFILE
@@ -632,18 +568,8 @@ class PublicStudioProfileView(APIView):
     def get(self, request, profile_id):
         from django.shortcuts import get_object_or_404
         from .serializers import PublicStudioProfileSerializer
-
-        # Only serve verified + active studios
-        profile = get_object_or_404(
-            SellerProfile,
-            id=profile_id,
-            is_active=True,
-            seller_account__is_verified=True,
-        )
-
-        serializer = PublicStudioProfileSerializer(
-            profile, context={'request': request}
-        )
+        profile = get_object_or_404(SellerProfile, id=profile_id, is_active=True, seller_account__is_verified=True)
+        serializer = PublicStudioProfileSerializer(profile, context={'request': request})
         return Response(serializer.data)
 
 
@@ -660,30 +586,20 @@ class StudioInquiryView(APIView):
         from .serializers import StudioInquirySerializer
         from .models import StudioInquiry
 
-        profile = get_object_or_404(
-            SellerProfile,
-            id=profile_id,
-            is_active=True,
-            seller_account__is_verified=True,
-        )
+        profile = get_object_or_404(SellerProfile, id=profile_id, is_active=True, seller_account__is_verified=True)
 
         serializer = StudioInquirySerializer(data=request.data)
         if not serializer.is_valid():
-            return Response(
-                {'status': 'error', 'errors': serializer.errors},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({'status': 'error', 'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
         data          = serializer.validated_data
         session_token = data.get('session_token')
-
-        # Link to BuyerProfile if session_token matches
         buyer_profile = None
         if session_token:
             try:
                 buyer_profile = BuyerProfile.objects.get(session_token=session_token)
             except BuyerProfile.DoesNotExist:
-                pass  # anonymous inquiry — that's fine
+                pass
 
         StudioInquiry.objects.create(
             seller_profile=profile,
@@ -692,6 +608,5 @@ class StudioInquiryView(APIView):
             email=data['email'],
             answers=data.get('answers', []),
         )
-
         return Response({'status': 'ok'}, status=status.HTTP_201_CREATED)
     
