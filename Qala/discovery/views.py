@@ -698,7 +698,7 @@ class StudioDirectoryView(APIView):
         # ── Group by primary craft ───────────────────────────────────────────
         studios_by_craft = {}
         for profile in qs:
-            serializer  = StudioDirectorySerializer(profile)
+            serializer  = StudioDirectorySerializer(profile, context={'request': request})
             data        = serializer.data
             craft_key   = (data.get('primary_craft') or 'other').lower().replace(' ', '-')
             studios_by_craft.setdefault(craft_key, []).append(data)
