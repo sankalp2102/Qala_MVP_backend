@@ -15,6 +15,7 @@ from .views import (
     AdminDiscoveryInquiryListView,
     AdminStudioInquiryListView,
     SellerStudioInquiryView,
+    StudioDirectoryView,
 )
 
 urlpatterns = [
@@ -42,6 +43,9 @@ urlpatterns = [
     # Public studio profile + inquiry submit
     path('discovery/studios/<int:profile_id>/',         PublicStudioProfileView.as_view()),
     path('discovery/studios/<int:profile_id>/inquire/', StudioInquiryView.as_view()),
+
+    # Feature 6 — Studio Directory (public browsable catalog)
+    path('studios/directory/', StudioDirectoryView.as_view()),
 
     # Seller — own studio inquiries only
     path('seller/studio-inquiries/', SellerStudioInquiryView.as_view()),

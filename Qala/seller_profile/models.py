@@ -113,13 +113,16 @@ class StudioDetails(FlagMixin):
     """
     seller_profile   = models.OneToOneField(SellerProfile, on_delete=models.CASCADE, related_name='studio_details')
 
-    studio_name      = models.CharField(max_length=300, null=True, blank=True)
-    location_city    = models.CharField(max_length=200, null=True, blank=True)
-    location_state   = models.CharField(max_length=200, null=True, blank=True)
+    studio_name        = models.CharField(max_length=300, null=True, blank=True)
+    location_city      = models.CharField(max_length=200, null=True, blank=True)
+    location_state     = models.CharField(max_length=200, null=True, blank=True)
     years_in_operation = models.FloatField(null=True, blank=True)
-    website_url      = models.URLField(null=True, blank=True)
-    instagram_url    = models.URLField(null=True, blank=True)
-    poc_working_style = models.TextField(null=True, blank=True)  # A.5 — buyer POC style
+    website_url        = models.URLField(null=True, blank=True)
+    instagram_url      = models.URLField(null=True, blank=True)
+    poc_working_style  = models.TextField(null=True, blank=True)  # A.5 — buyer POC style
+
+    # Directory card blurb — written by Qala admin, not seller
+    short_description = models.TextField(null=True, blank=True)
 
     # Per-field flags (admin can flag individual answers, not just the whole section)
     studio_name_flagged      = models.BooleanField(default=False)

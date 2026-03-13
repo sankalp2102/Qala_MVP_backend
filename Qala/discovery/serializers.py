@@ -476,9 +476,152 @@ class PublicStudioProfileSerializer(serializers.Serializer):
         ]
 
 
+
 # ─────────────────────────────────────────────────────────────────────────────
-# STUDIO INQUIRY — buyer submits enquiry from the studio profile page
+# STUDIO DIRECTORY — public card data for Feature 6
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Maps craft name keywords → CSS pattern class used on the directory card visual
+_CRAFT_PATTERN_MAP = {
+    'block': 'pattern-block',
+    'print': 'pattern-print',
+    'embroidery': 'pattern-embroidery',
+    'kantha': 'pattern-embroidery',
+    'zardozi': 'pattern-embroidery',
+    'chikankari': 'pattern-embroidery',
+    'handloom': 'pattern-weave',
+    'weav': 'pattern-weave',
+    'loom': 'pattern-weave',
+    'banarasi': 'pattern-weave',
+    'dye': 'pattern-dye',
+    'indigo': 'pattern-dye',
+    'shibori': 'pattern-dye',
+    'leather': 'pattern-leather',
+}
+
+
+def _craft_to_pattern(craft_name: str) -> str:
+    """Return CSS pattern class for a given craft name."""
+    lower = (craft_name or '').lower()
+    for keyword, pattern in _CRAFT_PATTERN_MAP.items():
+        if keyword in lower:
+            return pattern
+    return 'pattern-block'  # safe default
+
+
+def _sampling_time_display(weeks) -> str | None:
+    """Convert float weeks to human display, e.g. 2.5 → '2-3 weeks'."""
+    if weeks is None:
+        return None
+    w = float(weeks)
+    lo = int(w)
+    hi = lo + 1
+    if w == lo:
+        return f'{lo} weeks'
+    return f'{lo}-{hi} weeks'
+
+
+class StudioDirectorySerializer(serializers.Serializer):
+    """
+    Lightweight read-only card data for the Studio Directory (Feature 6).
+    Called by GET /api/studios/directory/ for each SellerProfile in the result set.
+    """
+    studio_id                     = serializers.SerializerMethodField()
+    studio_name                   = serializers.SerializerMethodField()
+    location                      = serializers.SerializerMethodField()
+    years_in_operation            = serializers.SerializerMethodField()
+    short_description             = serializers.SerializerMethodField()
+    primary_craft                 = serializers.SerializerMethodField()
+    secondary_crafts              = serializers.SerializerMethodField()
+    fabrics                       = serializers.SerializerMethodField()
+    product_types                 = serializers.SerializerMethodField()
+    has_inhouse_designer          = serializers.SerializerMethodField()
+    typical_sampling_time_display = serializers.SerializerMethodField()
+    card_pattern                  = serializers.SerializerMethodField()
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    def _sd(self, profile):
+        try:
+            return profile.studio_details
+        except Exception:
+            return None
+
+    # ── fields ───────────────────────────────────────────────────────────────
+
+    def get_studio_id(self, profile):
+        return profile.id
+
+    def get_studio_name(self, profile):
+        sd = self._sd(profile)
+        return sd.studio_name if sd else None
+
+    def get_location(self, profile):
+        sd = self._sd(profile)
+        if not sd:
+            return None
+        parts = [p for p in [sd.location_city, sd.location_state] if p]
+        return ', '.join(parts) if parts else None
+
+    def get_years_in_operation(self, profile):
+        sd = self._sd(profile)
+        return sd.years_in_operation if sd else None
+
+    def get_short_description(self, profile):
+        sd = self._sd(profile)
+        return sd.short_description if sd else None
+
+    def get_primary_craft(self, profile):
+        craft = profile.crafts.filter(is_primary=True).first()
+        return craft.craft_name if craft else None
+
+    def get_secondary_crafts(self, profile):
+        return list(
+            profile.crafts.filter(is_primary=False)
+            .values_list('craft_name', flat=True)[:4]
+        )
+
+    def get_fabrics(self, profile):
+        return list(
+            profile.fabric_answers.filter(works_with=True)
+            .values_list('fabric_name', flat=True)
+            .order_by('fabric_name')
+        )
+
+    def get_product_types(self, profile):
+        _BOOLEAN_FIELDS = [
+            'dresses', 'tops', 'shirts', 't_shirts', 'tunics_kurtas',
+            'coord_sets', 'jumpsuits', 'skirts', 'shorts', 'trousers_pants',
+            'denim', 'blazers', 'coats_jackets', 'capes', 'waistcoats_vests',
+            'kaftans', 'resortwear_sets', 'loungewear_sleepwear', 'activewear',
+            'kidswear', 'accessories_scarves_stoles',
+        ]
+        try:
+            pt = profile.product_types
+        except Exception:
+            return []
+        return [f for f in _BOOLEAN_FIELDS if getattr(pt, f, False)]
+
+    def get_has_inhouse_designer(self, profile):
+        try:
+            return profile.collab_design.has_fashion_designer
+        except Exception:
+            return None
+
+    def get_typical_sampling_time_display(self, profile):
+        crafts = profile.crafts.filter(is_primary=True, sampling_time_weeks__isnull=False)
+        weeks_values = list(crafts.values_list('sampling_time_weeks', flat=True))
+        if not weeks_values:
+            all_crafts = profile.crafts.filter(sampling_time_weeks__isnull=False)
+            weeks_values = list(all_crafts.values_list('sampling_time_weeks', flat=True))
+        if not weeks_values:
+            return None
+        return _sampling_time_display(min(weeks_values))
+
+    def get_card_pattern(self, profile):
+        craft = profile.crafts.filter(is_primary=True).first()
+        return _craft_to_pattern(craft.craft_name if craft else '')
+
 
 class StudioInquirySerializer(serializers.Serializer):
     name          = serializers.CharField(max_length=200)

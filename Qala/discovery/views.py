@@ -14,6 +14,7 @@ from .serializers import (
     VisualGridImageSerializer,
     StudioRecommendationSerializer,
     BuyerProfileSummarySerializer,
+    StudioDirectorySerializer,
 )
 from .matching import run_matching
 
@@ -623,4 +624,87 @@ class StudioInquiryView(APIView):
             answers=data.get('answers', []),
         )
         return Response({'status': 'ok'}, status=status.HTTP_201_CREATED)
-    
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /api/studios/directory/
+# Feature 6 — Studio Directory (public, no auth required)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class StudioDirectoryView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        craft_filter        = request.query_params.get('craft', '').strip().lower()
+        fabric_filter       = request.query_params.get('fabric', '').strip().lower()
+        product_type_filter = request.query_params.get('product_type', '').strip().lower()
+
+        # Base queryset — only fully active, verified studios
+        qs = (
+            SellerProfile.objects
+            .filter(is_active=True, seller_account__is_verified=True)
+            .prefetch_related(
+                'studio_details',
+                'crafts',
+                'fabric_answers',
+                'product_types',
+                'collab_design',
+            )
+            .select_related('seller_account')
+        )
+
+        total_count = qs.count()
+
+        # ── Server-side filtering ────────────────────────────────────────────
+        # These narrow the queryset so the serializer and grouping only
+        # touch matching profiles. Client-side JS also re-filters for
+        # instant chip feedback (no extra round-trip needed in V1).
+
+        if craft_filter:
+            qs = qs.filter(crafts__craft_name__icontains=craft_filter)
+
+        if fabric_filter:
+            qs = qs.filter(
+                fabric_answers__fabric_name__icontains=fabric_filter,
+                fabric_answers__works_with=True,
+            )
+
+        if product_type_filter:
+            # product_types is a single row of boolean fields
+            # Map the filter value to the actual field name
+            field_map = {
+                'dresses': 'dresses', 'tops': 'tops', 'shirts': 'shirts',
+                't-shirts': 't_shirts', 't_shirts': 't_shirts',
+                'tunics': 'tunics_kurtas', 'kurtas': 'tunics_kurtas',
+                'coord-sets': 'coord_sets', 'coord_sets': 'coord_sets',
+                'jumpsuits': 'jumpsuits', 'skirts': 'skirts', 'shorts': 'shorts',
+                'trousers': 'trousers_pants', 'pants': 'trousers_pants',
+                'denim': 'denim', 'blazers': 'blazers',
+                'coats': 'coats_jackets', 'jackets': 'coats_jackets',
+                'capes': 'capes', 'waistcoats': 'waistcoats_vests', 'vests': 'waistcoats_vests',
+                'kaftans': 'kaftans', 'resortwear': 'resortwear_sets',
+                'loungewear': 'loungewear_sleepwear', 'sleepwear': 'loungewear_sleepwear',
+                'activewear': 'activewear', 'kidswear': 'kidswear',
+                'accessories': 'accessories_scarves_stoles',
+            }
+            field = field_map.get(product_type_filter)
+            if field:
+                qs = qs.filter(**{f'product_types__{field}': True})
+
+        # De-duplicate (joins can multiply rows)
+        qs = qs.distinct()
+        filtered_count = qs.count()
+
+        # ── Group by primary craft ───────────────────────────────────────────
+        studios_by_craft = {}
+        for profile in qs:
+            serializer  = StudioDirectorySerializer(profile)
+            data        = serializer.data
+            craft_key   = (data.get('primary_craft') or 'other').lower().replace(' ', '-')
+            studios_by_craft.setdefault(craft_key, []).append(data)
+
+        return Response({
+            'total_count':     total_count,
+            'filtered_count':  filtered_count,
+            'studios_by_craft': studios_by_craft,
+        })

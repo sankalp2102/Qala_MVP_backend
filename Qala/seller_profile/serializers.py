@@ -116,6 +116,7 @@ class StudioDetailsSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'studio_name', 'location_city', 'location_state',
             'years_in_operation', 'website_url', 'instagram_url', 'poc_working_style',
+            'short_description',
             'studio_name_flagged', 'studio_name_flag_reason',
             'location_flagged',    'location_flag_reason',
             'years_flagged',       'years_flag_reason',
@@ -126,6 +127,7 @@ class StudioDetailsSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'id',
+            # short_description is writable by admin (seller has no input for it)
             'studio_name_flagged', 'studio_name_flag_reason',
             'location_flagged',    'location_flag_reason',
             'years_flagged',       'years_flag_reason',
