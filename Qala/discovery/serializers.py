@@ -531,6 +531,7 @@ class StudioDirectorySerializer(serializers.Serializer):
     location                      = serializers.SerializerMethodField()
     years_in_operation            = serializers.SerializerMethodField()
     short_description             = serializers.SerializerMethodField()
+    hero_image_url                = serializers.SerializerMethodField()
     primary_craft                 = serializers.SerializerMethodField()
     secondary_crafts              = serializers.SerializerMethodField()
     fabrics                       = serializers.SerializerMethodField()
@@ -570,6 +571,26 @@ class StudioDirectorySerializer(serializers.Serializer):
     def get_short_description(self, profile):
         sd = self._sd(profile)
         return sd.short_description if sd else None
+
+    def get_hero_image_url(self, profile):
+        sd = self._sd(profile)
+        if not sd:
+            return None
+        # Try hero type first, fall back to first work_dump image
+        hero = sd.media_files.filter(
+            media_type=StudioMedia.MediaType.HERO
+        ).first()
+        if not hero:
+            hero = sd.media_files.filter(
+                media_type=StudioMedia.MediaType.WORK_DUMP
+            ).order_by('order').first()
+        if not hero or not hero.file:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(hero.file.url)
+        # Fallback: return relative URL, frontend will prepend base
+        return hero.file.url
 
     def get_primary_craft(self, profile):
         craft = profile.crafts.filter(is_primary=True).first()
@@ -632,3 +653,4 @@ class StudioInquirySerializer(serializers.Serializer):
         default=list,
     )
     session_token = serializers.UUIDField(required=False, allow_null=True)
+    
