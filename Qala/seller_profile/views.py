@@ -160,6 +160,15 @@ class StudioContactView(APIView):
         serializer.save(studio=studio)
         return Response(serializer.data, status=201)
 
+    def patch(self, request, contact_id):
+        profile = get_active_profile(request)
+        studio  = get_object_or_404(StudioDetails, seller_profile=profile)
+        contact = get_object_or_404(StudioContact, id=contact_id, studio=studio)
+        serializer = StudioContactSerializer(contact, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
     def delete(self, request, contact_id):
         profile = get_active_profile(request)
         studio  = get_object_or_404(StudioDetails, seller_profile=profile)
