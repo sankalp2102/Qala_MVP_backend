@@ -113,7 +113,7 @@ SUPERTOKENS = {
     'SUPERTOKENS_URL': config('SUPERTOKENS_URL',         default='http://localhost:3567'),
     'API_KEY':         config('SUPERTOKENS_API_KEY',     default='70031101955ba2c956c9f6dd5469fa65a85bc91d'),
     'APP_NAME':        config('SUPERTOKENS_APP_NAME',    default='Qala'),
-    'API_DOMAIN':      config('SUPERTOKENS_API_DOMAIN',  default='http://localhost:8000'),
-    'WEBSITE_DOMAIN':  config('SUPERTOKENS_WEBSITE_DOMAIN', default='http://localhost:3000'),
+    'API_DOMAIN':      config('SUPERTOKENS_API_DOMAIN',  default='https://api.qala.studio'),
+    'WEBSITE_DOMAIN':  config('SUPERTOKENS_WEBSITE_DOMAIN', default='https://www.qala.studio'),
 }
 SUPERTOKENS_HOOK_SECRET = config('SUPERTOKENS_HOOK_SECRET', default='local-hook-secret-dev')
